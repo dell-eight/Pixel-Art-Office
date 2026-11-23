@@ -1,0 +1,1060 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><meta content="web_dashboard" name="shell-type"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600&amp;family=Space+Grotesk:wght@600;700&amp;family=Space+Mono:wght@700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>
+@layer base{
+  html,body{margin:0;padding:0;}
+  body{overscroll-behavior:none;}
+  main>:first-child{margin-top:0!important;}
+  main>:last-child{margin-bottom:0!important;}
+}
+::-webkit-scrollbar{display:none;}
+
+/* --- CRT SCANLINE & RETRO PHOSPHOR EFFECTS --- */
+@keyframes scanlineRoll {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 100%; }
+}
+
+@keyframes crtFlicker {
+  0% { opacity: 0.96; }
+  50% { opacity: 1; }
+  52% { opacity: 0.94; }
+  54% { opacity: 1; }
+  80% { opacity: 0.97; }
+  100% { opacity: 0.96; }
+}
+
+.crt-screen {
+  position: relative;
+  overflow: hidden;
+  animation: crtFlicker 0.15s infinite;
+}
+
+.crt-screen::before {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.45) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.04));
+  z-index: 20;
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+}
+
+.crt-screen::after {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  opacity: 0;
+  z-index: 21;
+  pointer-events: none;
+  animation: scanlineRoll 8s linear infinite;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0, 255, 200, 0.06) 50%, rgba(0, 255, 200, 0.02));
+  background-size: 100% 12px;
+}
+
+/* --- STATION AMBIENT PULSING GLOWS --- */
+@keyframes pulseGreen {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(78, 222, 163, 0.15), inset 0 0 8px rgba(78, 222, 163, 0.05);
+    border-color: rgba(78, 222, 163, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(78, 222, 163, 0.4), inset 0 0 14px rgba(78, 222, 163, 0.15);
+    border-color: rgba(78, 222, 163, 0.85);
+  }
+}
+
+@keyframes pulseAmber {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.25), inset 0 0 10px rgba(245, 158, 11, 0.08);
+    border-color: rgba(255, 193, 116, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 32px rgba(245, 158, 11, 0.55), inset 0 0 18px rgba(245, 158, 11, 0.25);
+    border-color: rgba(255, 221, 184, 1);
+  }
+}
+
+@keyframes pulseRed {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.2), inset 0 0 8px rgba(239, 68, 68, 0.06);
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(239, 68, 68, 0.5), inset 0 0 16px rgba(239, 68, 68, 0.18);
+    border-color: rgba(248, 113, 113, 0.85);
+  }
+}
+
+@keyframes pulseCyan {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(6, 182, 212, 0.15), inset 0 0 6px rgba(6, 182, 212, 0.05);
+    border-color: rgba(6, 182, 212, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(6, 182, 212, 0.45), inset 0 0 14px rgba(6, 182, 212, 0.16);
+    border-color: rgba(34, 211, 238, 0.85);
+  }
+}
+
+@keyframes alertBouncePulse {
+  0%, 100% {
+    transform: scale(1) translateY(0);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    transform: scale(1.2) translateY(-3px);
+    box-shadow: 0 0 22px rgba(239, 68, 68, 1);
+  }
+}
+
+@keyframes ledBreathe {
+  0%, 100% {
+    opacity: 0.65;
+    filter: drop-shadow(0 0 2px currentColor);
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+}
+
+/* 16-Bit Pixel Character Animations */
+@keyframes pixelBobWorking {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(-1deg); }
+}
+
+@keyframes pixelBobIdle {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-1.5px); }
+}
+
+@keyframes pixelPaperPlane {
+  0% { transform: translate(0, 0) scale(0.9); opacity: 0.9; }
+  50% { transform: translate(14px, -18px) scale(1.1); opacity: 1; }
+  100% { transform: translate(32px, -36px) scale(0.6); opacity: 0; }
+}
+
+@keyframes reelTransferGlide {
+  0% { transform: translateX(0px); }
+  50% { transform: translateX(18px); }
+  100% { transform: translateX(0px); }
+}
+
+@keyframes wavePulse {
+  0%, 100% { height: 6px; }
+  50% { height: 26px; }
+}
+
+@keyframes speechType {
+  0% { opacity: 0.85; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.85; transform: scale(0.98); }
+}
+
+.anim-working {
+  animation: pixelBobWorking 1.2s steps(2, jump-none) infinite;
+}
+
+.anim-idle {
+  animation: pixelBobIdle 2.5s ease-in-out infinite;
+}
+
+.anim-paperplane {
+  animation: pixelPaperPlane 2.4s ease-in-out infinite;
+}
+
+.anim-reel-glide {
+  animation: reelTransferGlide 3s ease-in-out infinite;
+}
+
+.anim-speech {
+  animation: speechType 2.8s ease-in-out infinite;
+}
+
+.station-pulse-green {
+  animation: pulseGreen 2.8s ease-in-out infinite;
+}
+
+.station-pulse-amber {
+  animation: pulseAmber 2.2s ease-in-out infinite;
+}
+
+.station-pulse-red {
+  animation: pulseRed 1.8s ease-in-out infinite;
+}
+
+.station-pulse-cyan {
+  animation: pulseCyan 3s ease-in-out infinite;
+}
+
+.alert-pulse {
+  animation: alertBouncePulse 1.1s ease-in-out infinite;
+}
+
+.led-breathe {
+  animation: ledBreathe 2s ease-in-out infinite;
+}
+
+/* Isometric Stardew/Habbo Parquet Floor Tile Style */
+.pixel-parquet {
+  background-color: #1a1618;
+  background-image: 
+    linear-gradient(45deg, #241c1b 25%, transparent 25%), 
+    linear-gradient(-45deg, #241c1b 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #241c1b 75%), 
+    linear-gradient(-45deg, transparent 75%, #241c1b 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crt-screen,
+  .crt-screen::after,
+  .station-pulse-green,
+  .station-pulse-amber,
+  .station-pulse-red,
+  .station-pulse-cyan,
+  .alert-pulse,
+  .led-breathe,
+  .anim-working,
+  .anim-idle,
+  .anim-paperplane,
+  .anim-reel-glide,
+  .anim-speech {
+    animation: none !important;
+  }
+}
+</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "secondary-fixed-dim": "#4edea3",
+        "surface-container-highest": "#323441",
+        "inverse-primary": "#855300",
+        "surface-bright": "#373846",
+        "primary-fixed-dim": "#ffb95f",
+        "surface-container": "#1d1f2b",
+        "surface-container-lowest": "#0b0d19",
+        "primary": "#ffc174",
+        "inverse-surface": "#e1e1f2",
+        "on-background": "#e1e1f2",
+        "on-tertiary-fixed-variant": "#5516be",
+        "tertiary-container": "#bda2ff",
+        "surface": "#11131e",
+        "on-primary": "#472a00",
+        "surface-variant": "#323441",
+        "surface-tint": "#ffb95f",
+        "on-tertiary": "#3c0091",
+        "on-error-container": "#ffdad6",
+        "secondary-fixed": "#6ffbbe",
+        "on-surface-variant": "#d8c3ad",
+        "background": "#11131e",
+        "inverse-on-surface": "#2e303d",
+        "primary-container": "#f59e0b",
+        "on-secondary": "#003824",
+        "on-secondary-fixed-variant": "#005236",
+        "surface-container-high": "#272936",
+        "on-primary-container": "#613b00",
+        "error-container": "#93000a",
+        "on-secondary-fixed": "#002113",
+        "secondary-container": "#00a572",
+        "tertiary": "#d5c3ff",
+        "surface-dim": "#11131e",
+        "on-tertiary-container": "#520fbb",
+        "tertiary-fixed-dim": "#d0bcff",
+        "primary-fixed": "#ffddb8",
+        "outline": "#a08e7a",
+        "on-primary-fixed-variant": "#653e00",
+        "surface-container-low": "#191b27",
+        "secondary": "#4edea3",
+        "on-surface": "#e1e1f2",
+        "error": "#ffb4ab",
+        "on-tertiary-fixed": "#23005c",
+        "on-error": "#690005",
+        "on-secondary-container": "#00311f",
+        "tertiary-fixed": "#e9ddff",
+        "on-primary-fixed": "#2a1700",
+        "outline-variant": "#534434"
+      },
+      borderRadius: {
+        DEFAULT: "0.25rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        full: "9999px"
+      },
+      spacing: {
+        margin: "1.5rem",
+        "margin-mobile": "1rem",
+        gutter: "1rem",
+        "space-lg": "1.5rem",
+        "space-md": "1rem",
+        "space-xl": "2.5rem",
+        "space-sm": "0.5rem",
+        "gutter-mobile": "0.75rem",
+        "space-xs": "0.25rem"
+      },
+      fontFamily: {
+        "label-sm": ["Space Mono"],
+        "body-lg": ["Chivo"],
+        "headline-xl": ["Space Grotesk"],
+        "body-sm": ["Chivo"],
+        "headline-lg-mobile": ["Space Grotesk"],
+        "body-md": ["Chivo"],
+        "headline-lg": ["Space Grotesk"],
+        "headline-md": ["Space Grotesk"],
+        "headline-sm": ["Space Grotesk"],
+        "label-lg": ["Space Mono"],
+        "label-md": ["Space Mono"],
+        "headline-xl-mobile": ["Space Grotesk"],
+        "stat-counter": ["Space Mono"]
+      },
+      fontSize: {
+        "label-sm": ["9px", { lineHeight: "12px", letterSpacing: "0.12em", fontWeight: "700" }],
+        "body-lg": ["16px", { lineHeight: "24px", letterSpacing: "0em", fontWeight: "400" }],
+        "headline-xl": ["40px", { lineHeight: "48px", letterSpacing: "-0.02em", fontWeight: "700" }],
+        "body-sm": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "400" }],
+        "headline-lg-mobile": ["22px", { lineHeight: "28px", letterSpacing: "0em", fontWeight: "700" }],
+        "body-md": ["14px", { lineHeight: "20px", letterSpacing: "0em", fontWeight: "400" }],
+        "headline-lg": ["28px", { lineHeight: "36px", letterSpacing: "-0.01em", fontWeight: "700" }],
+        "headline-md": ["20px", { lineHeight: "26px", letterSpacing: "0em", fontWeight: "600" }],
+        "headline-sm": ["16px", { lineHeight: "22px", fontWeight: "600" }],
+        "label-lg": ["13px", { lineHeight: "16px", letterSpacing: "0.08em", fontWeight: "700" }],
+        "label-md": ["11px", { lineHeight: "14px", letterSpacing: "0.1em", fontWeight: "700" }],
+        "stat-counter": ["20px", { lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "700" }]
+      }
+    }
+  }
+};
+</script><style>
+@keyframes courierWalkCycle {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  25% { transform: translateY(-3px) rotate(2deg); }
+  50% { transform: translateY(0px) rotate(0deg); }
+  75% { transform: translateY(-3px) rotate(-2deg); }
+}
+@keyframes legStepLeft {
+  0%, 100% { transform: translateY(0px) scaleY(1); }
+  50% { transform: translateY(-2px) scaleY(0.7); }
+}
+@keyframes legStepRight {
+  0%, 100% { transform: translateY(-2px) scaleY(0.7); }
+  50% { transform: translateY(0px) scaleY(1); }
+}
+@keyframes reelFolderGlow {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(255, 193, 116, 0.7), 0 0 28px rgba(245, 158, 11, 0.5), inset 0 0 8px rgba(255, 255, 255, 0.5);
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(255, 221, 184, 0.95), 0 0 38px rgba(245, 158, 11, 0.8), inset 0 0 12px rgba(255, 255, 255, 0.8);
+    transform: translateY(-4px) scale(1.08);
+  }
+}
+@keyframes sparkleFlicker {
+  0%, 100% { opacity: 0.3; transform: scale(0.7) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.3) rotate(90deg); }
+}
+@keyframes trackWaypointPulse {
+  0%, 100% { border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 4px rgba(245, 158, 11, 0.2); }
+  50% { border-color: rgba(255, 193, 116, 0.9); box-shadow: 0 0 10px rgba(255, 193, 116, 0.6); }
+}
+@keyframes courierTravelTrack {
+  0% { transform: translateX(0%); }
+  45% { transform: translateX(82%); }
+  50% { transform: translateX(82%) scaleX(-1); }
+  95% { transform: translateX(0%) scaleX(-1); }
+  100% { transform: translateX(0%) scaleX(1); }
+}
+.anim-courier-runner {
+  animation: courierWalkCycle 0.5s steps(4, jump-none) infinite;
+}
+.anim-reel-folder {
+  animation: reelFolderGlow 1.4s ease-in-out infinite;
+}
+.anim-sparkle {
+  animation: sparkleFlicker 0.9s ease-in-out infinite;
+}
+.anim-courier-traverse {
+  animation: courierTravelTrack 12s linear infinite;
+}
+</style></head><body class="bg-surface-container-lowest font-body-md text-on-surface min-h-screen selection:bg-primary-container selection:text-on-primary-container"><header class="fixed top-0 left-0 right-0 z-50 h-16 bg-[#151824] border-b border-[#262a3d] shadow-[0_4px_20px_rgba(0,0,0,0.5)]"><div class="w-full h-full px-gutter flex items-center justify-between"><div class="flex items-center gap-space-md"><div class="w-10 h-10 bg-primary-container text-on-primary-container rounded flex items-center justify-center shadow-md shadow-primary-container/20"><span class="material-symbols-outlined text-[24px]">movie</span></div><div><span class="font-label-lg text-label-lg text-primary block leading-none tracking-wide">REELCRAFT 16-BIT STUDIOS</span><span class="font-label-sm text-label-sm text-[#8c92a4] block mt-space-xs">OBSIDIAN SIMULATION PIPELINE V2.4</span></div></div><div class="hidden md:flex items-center gap-space-lg"><div class="flex items-center gap-space-xs bg-[#1a1d2e] border border-[#2b3147] px-space-md py-space-xs rounded shadow-inner"><span class="material-symbols-outlined text-amber-500 text-[18px]">light_mode</span><span class="font-label-sm text-label-sm text-amber-300 font-bold">☀️ MORNING SPRINT - 10:15 AM</span></div><div class="flex items-center gap-space-xs bg-[#1a1d2e] border border-[#2b3147] px-space-md py-space-xs rounded"><span class="material-symbols-outlined text-secondary text-[18px] led-breathe">conveyor_belt</span><span class="font-label-sm text-label-sm text-slate-300">Queue: <strong class="text-secondary font-bold led-breathe">3 in flight</strong></span></div><div class="flex items-center gap-space-xs bg-[#241c10] border border-[#523e19] text-primary px-space-md py-space-xs rounded shadow-[0_0_12px_rgba(245,158,11,0.15)]"><span class="material-symbols-outlined text-primary text-[18px]">monetization_on</span><span class="font-stat-counter text-stat-counter text-primary font-bold">₱ 142,850</span></div></div><div class="flex items-center gap-space-md"><div class="hidden sm:flex items-center bg-[#1a1d2e] border border-[#262c42] rounded p-space-xs"><button class="px-space-sm py-space-xs font-label-sm text-label-sm text-slate-400 hover:text-white hover:bg-[#252a40] rounded transition-colors" type="button">1x</button><button class="px-space-sm py-space-xs font-label-sm text-label-sm text-slate-400 hover:text-white hover:bg-[#252a40] rounded transition-colors" type="button">2x</button><button class="px-space-sm py-space-xs font-label-sm text-label-sm text-amber-400 hover:text-amber-300 hover:bg-[#252a40] rounded transition-colors" type="button">PAUSE</button></div><div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center ring-2 ring-primary/40"><span class="material-symbols-outlined text-[18px]">person</span></div></div></div></header><aside class="fixed left-0 top-16 bottom-16 w-64 bg-[#121420] border-r border-[#222738] z-40 flex flex-col justify-between p-space-md"><div class="space-y-space-md"><div class="px-space-sm pt-space-xs"><span class="font-label-sm text-label-sm text-slate-500">STUDIO CHANNELS</span></div><nav class="space-y-space-xs"><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded font-label-md text-label-md text-slate-400 hover:text-white hover:bg-[#1a1e2e] transition-colors" data-path="office-floor" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span>Office Floor</a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded font-label-md text-label-md text-slate-400 hover:text-white hover:bg-[#1a1e2e] transition-colors" data-path="pipeline-kanban" href="#"><span class="material-symbols-outlined text-[20px]">view_kanban</span>Pipeline Kanban</a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded font-label-md text-label-md text-slate-400 hover:text-white hover:bg-[#1a1e2e] transition-colors" data-path="staff-roster" href="#"><span class="material-symbols-outlined text-[20px]">group</span>Staff Roster</a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded font-label-md text-label-md text-slate-400 hover:text-white hover:bg-[#1a1e2e] transition-colors" data-path="analytics-ledger" href="#"><span class="material-symbols-outlined text-[20px]">receipt_long</span>Analytics Ledger</a></nav></div><div class="bg-[#181b28] border border-[#252b3d] p-space-sm rounded space-y-space-xs shadow-inner"><div class="flex justify-between items-center"><span class="font-label-sm text-label-sm text-slate-400">STUDIO MORALE</span><span class="font-label-sm text-label-sm text-secondary font-bold led-breathe">94%</span></div><div class="w-full bg-[#0e1017] h-2 rounded overflow-hidden border border-[#2b3147]"><div class="bg-secondary h-full w-[94%] shadow-[0_0_8px_#4edea3]"></div></div></div></aside><div class="pl-64"><main class="pt-16 pb-16 w-full min-h-screen bg-[#0e101a]"><div class="flex flex-col w-full">
+<!-- Top Control Banner & Retro Header -->
+<div class="px-margin py-space-md bg-surface-container-high border-b border-surface-variant flex flex-col gap-space-md">
+<!-- Title Strip & Main Action -->
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-md">
+<div class="w-10 h-10 bg-primary-container text-on-primary-container rounded flex items-center justify-center shadow-md">
+<span class="material-symbols-outlined text-[24px]">view_kanban</span>
+</div>
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-primary font-bold">STATION DISPATCHER</span>
+<span class="inline-block w-2 h-2 rounded-full bg-secondary-fixed-dim led-breathe"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant font-mono">STATION_CLK: 10:15:42</span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">PIPELINE KANBAN // PRODUCTION BOARD</h1>
+</div>
+</div>
+<!-- Action Group -->
+<div class="flex flex-wrap items-center gap-space-sm">
+<div class="flex bg-surface-container-lowest p-space-xs rounded shadow-sm">
+<button class="px-space-md py-space-xs rounded bg-primary text-on-primary font-label-md text-label-md flex items-center gap-space-xs transition-all shadow-sm" type="button">
+<span class="material-symbols-outlined text-[16px]">view_kanban</span>
+<span>Kanban Columns</span>
+</button>
+<button class="px-space-md py-space-xs rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-space-xs transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">timeline</span>
+<span>Sprint Timeline</span>
+</button>
+<button class="px-space-md py-space-xs rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-space-xs transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">grid_4x4</span>
+<span>Bottleneck Matrix</span>
+</button>
+</div>
+<button class="px-space-lg py-space-sm bg-primary text-on-primary hover:bg-primary-container font-label-md text-label-md rounded flex items-center gap-space-xs shadow-md active:translate-y-0.5 transition-transform" onclick="triggerNewOrderModal()" type="button">
+<span class="material-symbols-outlined text-[18px]">add_box</span>
+<span>+ NEW REEL ORDER (DRAFT)</span>
+</button>
+</div>
+</div>
+<!-- Filters Strip & Real-time Metrics -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-md items-center">
+<!-- Search & Sprint Select -->
+<div class="lg:col-span-5 flex flex-wrap sm:flex-nowrap items-center gap-space-sm">
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-lowest text-on-surface pl-8 pr-3 py-1.5 rounded font-mono text-body-sm focus:outline-none shadow-inner" id="filter-kanban-search" oninput="filterCards(this.value)" placeholder="Find reel by #ID, title or station..." type="text">
+</div>
+<div class="relative shrink-0">
+<select class="bg-surface-container-lowest text-on-surface font-label-sm text-label-sm pl-2.5 pr-8 py-2 rounded focus:outline-none appearance-none shadow-inner cursor-pointer font-bold">
+<option>Sprint 18: Viral Growth (Week 18)</option>
+<option>Sprint 17: Retainer Sponsors</option>
+<option>Sprint 19: Q3 Blitz Campaign</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-[16px] pointer-events-none text-on-surface-variant">expand_more</span>
+</div>
+</div>
+<!-- Quick Metrics Ribbon -->
+<div class="lg:col-span-7 grid grid-cols-2 md:grid-cols-4 gap-space-xs">
+<div class="bg-surface-container p-space-xs rounded flex flex-col justify-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant">W.I.P. SLOTS</span>
+<div class="flex items-center justify-between">
+<span class="font-stat-counter text-stat-counter text-primary font-bold">5 / 8</span>
+<span class="font-label-sm text-label-sm text-secondary">READY</span>
+</div>
+</div>
+<div class="bg-surface-container p-space-xs rounded flex flex-col justify-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant">VELOCITY</span>
+<div class="flex items-center justify-between">
+<span class="font-stat-counter text-stat-counter text-on-surface font-bold">3.4/d</span>
+<span class="font-label-sm text-label-sm text-secondary font-bold">+18%</span>
+</div>
+</div>
+<div class="bg-surface-container p-space-xs rounded flex flex-col justify-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant">AVG DWELL</span>
+<div class="flex items-center justify-between">
+<span class="font-stat-counter text-stat-counter text-error font-bold">42m</span>
+<span class="font-label-sm text-label-sm text-error bg-error-container/40 px-1 rounded">Edit Bay</span>
+</div>
+</div>
+<div class="bg-surface-container p-space-xs rounded flex flex-col justify-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant">IN-FLIGHT VALUE</span>
+<div class="flex items-center justify-between">
+<span class="font-stat-counter text-stat-counter text-primary font-bold">₱285.4k</span>
+<span class="material-symbols-outlined text-primary text-[16px]">trending_up</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Quick Pill Filter Tags -->
+<div class="flex flex-wrap items-center gap-space-xs pt-space-xs">
+<button class="px-space-sm py-0.5 rounded-full bg-primary text-on-primary font-label-sm text-label-sm font-bold shadow-sm" onclick="setTagFilter('all')">All Episodes (7)</button>
+<button class="px-space-sm py-0.5 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm" onclick="setTagFilter('rush')">🔥 High Priority (2)</button>
+<button class="px-space-sm py-0.5 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm" onclick="setTagFilter('qa')">⚡ Awaiting QA (1)</button>
+<button class="px-space-sm py-0.5 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm" onclick="setTagFilter('blocked')">🛑 Bottleneck / Edit (1)</button>
+<button class="px-space-sm py-0.5 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm" onclick="setTagFilter('published')">✨ Done Today (3)</button>
+</div>
+</div>
+<!-- Main Kanban Floor Viewport -->
+<div class="w-full overflow-x-auto p-margin">
+<div class="min-w-[1720px] grid grid-cols-7 gap-space-md items-start pb-space-xl"><!-- 8 SEQUENTIAL PRODUCTION STAGES -->
+<div class="min-w-[1980px] grid grid-cols-8 gap-space-md items-start pb-space-xl">
+  <!-- STAGE 01: IDEA -->
+  <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-space-sm shadow-sm" data-col="idea">
+    <div class="p-space-xs bg-surface-container rounded flex items-center justify-between">
+      <div class="flex items-center gap-space-xs">
+        <span class="w-6 h-6 rounded bg-primary-container text-on-primary-container flex items-center justify-center font-mono font-bold text-label-sm">01</span>
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface font-bold block">Idea</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant block font-mono">Topic &amp; Hooks</span>
+        </div>
+      </div>
+      <span class="px-space-xs py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-mono text-label-sm font-bold">1/3 WIP</span>
+    </div>
+    <!-- Reel Card 88 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-md hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-0.5" onclick="selectReelCard('reel-88')">
+      <div class="flex items-center justify-between">
+        <span class="font-label-sm text-label-sm bg-surface-container-high px-1.5 py-0.5 rounded font-mono font-bold text-primary">#EP-88</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Backlog</span>
+      </div>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight group-hover:text-primary transition-colors">
+        Why Clean Desks Secretly Kill Programmer Flow
+      </h3>
+      <p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">
+        Contrarian workspace psychology angle with 3 B-roll setups.
+      </p>
+      <div class="flex flex-wrap gap-1">
+        <span class="px-1.5 py-0.5 bg-surface-container rounded text-label-sm font-mono text-on-surface-variant">#DevHumor</span>
+        <span class="px-1.5 py-0.5 bg-surface-container rounded text-label-sm font-mono text-on-surface-variant">#CozySetup</span>
+      </div>
+      <div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+        <div class="bg-primary h-full w-[10%]"></div>
+      </div>
+      <div class="flex items-center justify-between pt-space-xs border-t border-surface-container">
+        <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">ETA: 3 hrs</span>
+        <span class="font-label-sm text-label-sm text-primary font-mono font-bold">₱28,000</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 02: SCRIPT -->
+  <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-space-sm shadow-sm" data-col="script">
+    <div class="p-space-xs bg-surface-container rounded flex items-center justify-between">
+      <div class="flex items-center gap-space-xs">
+        <span class="w-6 h-6 rounded bg-primary-container text-on-primary-container flex items-center justify-center font-mono font-bold text-label-sm">02</span>
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface font-bold block">Script</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant block font-mono">Elena Rostova</span>
+        </div>
+      </div>
+      <span class="px-space-xs py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-mono text-label-sm font-bold">1/2 WIP</span>
+    </div>
+    <!-- Reel Card 87 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-md hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-0.5" onclick="selectReelCard('reel-87')">
+      <div class="flex items-center justify-between">
+        <span class="font-label-sm text-label-sm bg-surface-container-high px-1.5 py-0.5 rounded font-mono font-bold text-primary">#EP-87</span>
+        <span class="flex items-center gap-1 font-label-sm text-label-sm text-secondary font-bold">
+          <span class="material-symbols-outlined text-[14px]">edit_note</span> Script Phase
+        </span>
+      </div>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight group-hover:text-primary transition-colors">
+        Top 3 Chrome Extensions You Didn't Know Existed
+      </h3>
+      <p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">
+        Hook Variant B selected: "If you work in browser tab chaos, drop everything..."
+      </p>
+      <div class="bg-surface-container p-space-xs rounded flex items-center justify-between text-body-sm font-mono">
+        <span class="text-on-surface-variant">Progress</span>
+        <span class="text-on-surface font-bold">Drafting Hook 02</span>
+      </div>
+      <div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+        <div class="bg-primary h-full w-[25%]"></div>
+      </div>
+      <div class="flex items-center justify-between pt-space-xs border-t border-surface-container">
+        <div class="flex items-center gap-1">
+          <div class="w-5 h-5 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-mono text-[9px] font-bold">ER</div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Elena R.</span>
+        </div>
+        <span class="font-label-sm text-label-sm text-primary font-mono font-bold">₱35,000</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 03: ART -->
+  <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-space-sm shadow-sm" data-col="art">
+    <div class="p-space-xs bg-surface-container rounded flex items-center justify-between">
+      <div class="flex items-center gap-space-xs">
+        <span class="w-6 h-6 rounded bg-primary-container text-on-primary-container flex items-center justify-center font-mono font-bold text-label-sm">03</span>
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface font-bold block">Art</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant block font-mono">Kaito Tanaka</span>
+        </div>
+      </div>
+      <span class="px-space-xs py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-mono text-label-sm font-bold">1/2 WIP</span>
+    </div>
+    <!-- Reel Card 89 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-md hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-0.5" onclick="selectReelCard('reel-89')">
+      <div class="flex items-center justify-between">
+        <span class="font-label-sm text-label-sm bg-surface-container-high px-1.5 py-0.5 rounded font-mono font-bold text-primary">#EP-89</span>
+        <span class="flex items-center gap-1 font-label-sm text-label-sm text-primary font-bold">
+          <span class="material-symbols-outlined text-[14px]">palette</span> Pixel Assets
+        </span>
+      </div>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight group-hover:text-primary transition-colors">
+        Cyberpunk Ramen Bar Isometric Time-lapse
+      </h3>
+      <div class="w-full h-20 rounded bg-surface-container-highest overflow-hidden relative shadow-inner">
+        <img class="w-full h-full object-cover" alt="Pixel cyberpunk ramen bar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDTN7O5Sp-gUg9IYQ7JGnpR9RWfco1x-ETS6BufDRgP-NYqOsIQF-gI4a8Buc5MQN5-iDMggq5ivUEHq2GLra5Sn7lFZB5TmB18BQrFPcomE_v0AmiV8om6uMcHWzJmVtO3cUa_12jXTbYbN7izk91xtf1PSnDarGRtP7vB0-i68VE13GdcsSXFDn0JaJcIDu_yU7euxHzOZfx_874GgW_K3QYtaQMcXOFQ7DpUbprs">
+        <span class="absolute bottom-1 right-1 bg-surface-container-lowest/80 text-on-surface font-mono text-[9px] px-1 rounded">16 Sprites</span>
+      </div>
+      <div class="flex items-center justify-between text-body-sm font-mono">
+        <span class="text-on-surface-variant font-label-sm">Asset Pass</span>
+        <span class="text-on-surface font-bold font-label-sm">7 / 10 Assets</span>
+      </div>
+      <div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+        <div class="bg-secondary h-full w-[70%]"></div>
+      </div>
+      <div class="flex items-center justify-between pt-space-xs border-t border-surface-container">
+        <div class="flex items-center gap-1">
+          <div class="w-5 h-5 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-mono text-[9px] font-bold">KT</div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Kaito T.</span>
+        </div>
+        <span class="font-label-sm text-label-sm text-primary font-mono font-bold">₱45,000</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 04: ANIMATION -->
+  <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-space-sm shadow-sm" data-col="animation">
+    <div class="p-space-xs bg-surface-container rounded flex items-center justify-between">
+      <div class="flex items-center gap-space-xs">
+        <span class="w-6 h-6 rounded bg-primary-container text-on-primary-container flex items-center justify-center font-mono font-bold text-label-sm">04</span>
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface font-bold block">Animation</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant block font-mono">Maya Vance</span>
+        </div>
+      </div>
+      <span class="px-space-xs py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-mono text-label-sm font-bold">1/2 WIP</span>
+    </div>
+    <!-- Reel Card 86 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-md hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-0.5" onclick="selectReelCard('reel-86')">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1">
+          <span class="font-label-sm text-label-sm bg-surface-container-high px-1.5 py-0.5 rounded font-mono font-bold text-primary">#EP-86</span>
+          <span class="font-label-sm text-label-sm bg-primary-fixed text-on-primary-fixed-variant px-1 rounded font-bold">⚡ BOOSTED</span>
+        </div>
+        <span class="material-symbols-outlined text-[16px] text-amber-500">local_cafe</span>
+      </div>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight group-hover:text-primary transition-colors">
+        Stop Scrolling If You Want 10 Hours Back
+      </h3>
+      <div class="bg-surface-container p-space-xs rounded flex flex-col gap-1 text-label-sm font-mono">
+        <div class="flex justify-between">
+          <span class="text-on-surface-variant">Render Status</span>
+          <span class="text-secondary font-bold">324/450 frames</span>
+        </div>
+        <div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+          <div class="bg-secondary-container h-full w-[72%]"></div>
+        </div>
+      </div>
+      <div class="flex items-center justify-between text-body-sm font-mono pt-0.5">
+        <span class="text-on-surface-variant font-label-sm">Motion: 1.25x</span>
+        <span class="text-on-surface font-bold font-label-sm">ETA: 18m</span>
+      </div>
+      <div class="flex items-center justify-between pt-space-xs border-t border-surface-container">
+        <div class="flex items-center gap-1">
+          <div class="w-5 h-5 rounded-full bg-tertiary text-on-tertiary flex items-center justify-center font-mono text-[9px] font-bold">MV</div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Maya V.</span>
+        </div>
+        <span class="font-label-sm text-label-sm text-primary font-mono font-bold">₱48,000</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 05: VOICE -->
+  <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-space-sm shadow-sm" data-col="voice">
+    <div class="p-space-xs bg-surface-container rounded flex items-center justify-between">
+      <div class="flex items-center gap-space-xs">
+        <span class="w-6 h-6 rounded bg-primary-container text-on-primary-container flex items-center justify-center font-mono font-bold text-label-sm">05</span>
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface font-bold block">Voice</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant block font-mono">Darius Cole</span>
+        </div>
+      </div>
+      <span class="px-space-xs py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-mono text-label-sm font-bold">1/2 WIP</span>
+    </div>
+    <!-- Reel Card 90 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-md hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-0.5" onclick="selectReelCard('reel-90')">
+      <div class="flex items-center justify-between">
+        <span class="font-label-sm text-label-sm bg-surface-container-high px-1.5 py-0.5 rounded font-mono font-bold text-primary">#EP-90</span>
+        <span class="font-label-sm text-label-sm text-tertiary font-bold flex items-center gap-1 font-mono">
+          <span class="material-symbols-outlined text-[14px]">graphic_eq</span> 48kHz
+        </span>
+      </div>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight group-hover:text-primary transition-colors">
+        The Micro-Habit That Tripled My Coding Output
+      </h3>
+      <div class="bg-surface-container p-space-xs rounded flex flex-col gap-1">
+        <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Peak: -1.2dB</span>
+        <div class="h-5 flex items-center gap-1 px-1">
+          <span class="w-1 bg-tertiary-container h-2 rounded"></span>
+          <span class="w-1 bg-tertiary-container h-4 rounded"></span>
+          <span class="w-1 bg-tertiary-container h-5 rounded"></span>
+          <span class="w-1 bg-primary h-5 rounded"></span>
+          <span class="w-1 bg-primary h-3 rounded"></span>
+          <span class="w-1 bg-tertiary-container h-5 rounded"></span>
+          <span class="w-1 bg-tertiary h-2 rounded"></span>
+          <span class="w-1 bg-tertiary h-4 rounded"></span>
+          <span class="w-1 bg-primary h-5 rounded"></span>
+          <span class="w-1 bg-tertiary-container h-2 rounded"></span>
+        </div>
+      </div>
+      <div class="flex items-center justify-between pt-space-xs border-t border-surface-container">
+        <div class="flex items-center gap-1">
+          <div class="w-5 h-5 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-mono text-[9px] font-bold">DC</div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Darius C.</span>
+        </div>
+        <span class="font-label-sm text-label-sm text-primary font-mono font-bold">₱31,200</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 06: EDITING (BOTTLENECK) -->
+  <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-space-sm shadow-sm ring-1 ring-error/40" data-col="editing">
+    <div class="p-space-xs bg-surface-container rounded flex items-center justify-between">
+      <div class="flex items-center gap-space-xs">
+        <span class="w-6 h-6 rounded bg-error-container text-on-error-container flex items-center justify-center font-mono font-bold text-label-sm">06</span>
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-wide text-error font-bold block">Editing</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant block font-mono">Samira Lin</span>
+        </div>
+      </div>
+      <span class="px-space-xs py-0.5 rounded bg-error-container text-on-error-container font-mono text-label-sm font-bold">BOTTLENECK</span>
+    </div>
+    <!-- Reel Card 85 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-md hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-0.5" onclick="selectReelCard('reel-85')">
+      <div class="flex items-center justify-between">
+        <span class="font-label-sm text-label-sm bg-surface-container-high px-1.5 py-0.5 rounded font-mono font-bold text-primary">#EP-85</span>
+        <span class="font-label-sm text-label-sm bg-error-container text-on-error-container px-1 rounded font-bold font-mono">STUCK</span>
+      </div>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight group-hover:text-primary transition-colors">
+        How Solo Creators Make $10k/mo with AI
+      </h3>
+      <div class="bg-surface-container p-space-xs rounded flex flex-col gap-1 text-label-sm font-mono">
+        <div class="flex justify-between">
+          <span class="text-error font-bold">What is stuck:</span>
+          <span class="text-on-surface font-bold">Captions Sync</span>
+        </div>
+        <div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+          <div class="bg-primary h-full w-[88%]"></div>
+        </div>
+      </div>
+      <div class="flex items-center justify-between text-body-sm font-mono">
+        <span class="text-on-surface-variant font-label-sm">ETA: 24 mins</span>
+        <span class="font-label-sm text-label-sm text-primary font-mono font-bold">₱52,000</span>
+      </div>
+      <div class="flex items-center justify-between pt-space-xs border-t border-surface-container">
+        <div class="flex items-center gap-1">
+          <div class="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center font-mono text-[9px] font-bold">SL</div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Samira L.</span>
+        </div>
+        <button class="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant hover:text-on-surface font-mono text-label-sm flex items-center gap-1" onclick="event.stopPropagation(); nudgeStation('Editing Bay')" type="button">
+          <span class="material-symbols-outlined text-[13px]">bolt</span> Nudge
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 07: QA (APPROVAL NEEDED) -->
+  <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-space-sm shadow-md ring-1 ring-primary/40" data-col="qa">
+    <div class="p-space-xs bg-surface-container rounded flex items-center justify-between">
+      <div class="flex items-center gap-space-xs">
+        <span class="w-6 h-6 rounded bg-primary text-on-primary flex items-center justify-center font-mono font-bold text-label-sm">07</span>
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-wide text-primary font-bold block">QA</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant block font-mono">Oliver Thorne</span>
+        </div>
+      </div>
+      <span class="px-space-xs py-0.5 rounded bg-primary-container text-on-primary-container font-mono text-label-sm font-bold alert-pulse">1 AWAITING</span>
+    </div>
+    <!-- Reel Card 84 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-xl ring-2 ring-primary transition-all cursor-pointer group" id="card-reel-84" onclick="selectReelCard('reel-84')">
+      <div class="flex flex-wrap items-center gap-1">
+        <span class="font-label-sm text-label-sm bg-primary-container text-on-primary-container px-1 rounded font-mono font-bold">⚡ RUSH</span>
+        <span class="font-label-sm text-label-sm bg-error-container text-on-error-container px-1.5 py-0.5 rounded font-mono font-bold flex items-center gap-0.5">
+          <span class="material-symbols-outlined text-[11px]">priority_high</span> AWAITING APPROVAL
+        </span>
+      </div>
+      <div class="flex items-center justify-between pt-0.5">
+        <span class="font-label-sm text-label-sm font-mono font-bold text-primary">#EP-84</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">00:30 ProRes</span>
+      </div>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight group-hover:text-primary transition-colors">
+        Top 5 AI Hacks That Feel Illegal
+      </h3>
+      <div class="w-full h-20 rounded bg-surface-container-highest overflow-hidden relative shadow-inner">
+        <img class="w-full h-full object-cover" alt="CRT render reel frame verification" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_hRZ5T4gq_95sxyviM3V8gIO4RbVdGQnFNPuKRRqQLPkVfki0NOE7XsTzRxABh2yYA1-E8-QMAOmfOC60wfGL_oC7RiKms7txzE_Aby5a_UIT86ErfjUqdjvMMO57ZHnxn9u2MMOgwfkwFohwh1-0PzC6Li6tmjlNUiIRTjC0sU3VXTdbkfTrp53QQyyKK669MvEIIozEgfhha419DSOZiUuj5IorajbPdfelIBQV">
+        <span class="absolute top-1 left-1 bg-surface-container-lowest/80 text-primary font-mono text-[9px] px-1 rounded font-bold">VERIFY</span>
+      </div>
+      <div class="bg-surface-container p-space-xs rounded flex flex-col gap-1 text-label-sm font-mono">
+        <div class="flex justify-between">
+          <span class="text-on-surface-variant">Milestones</span>
+          <span class="text-primary font-bold">6 / 8 Done</span>
+        </div>
+        <div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+          <div class="bg-primary h-full w-[85%]"></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-space-xs pt-space-xs">
+        <button class="px-space-xs py-1 bg-secondary text-on-secondary hover:bg-secondary-container font-label-sm text-label-sm rounded font-bold flex items-center justify-center gap-1 shadow-sm transition-all active:translate-y-0.5" onclick="event.stopPropagation(); approveReel('84')" type="button">
+          <span class="material-symbols-outlined text-[14px]">verified</span> STAMP OK
+        </button>
+        <button class="px-space-xs py-1 bg-error-container text-on-error-container hover:bg-error font-label-sm text-label-sm rounded font-bold flex items-center justify-center gap-1 transition-all active:translate-y-0.5" onclick="event.stopPropagation(); sendBackReel('84')" type="button">
+          <span class="material-symbols-outlined text-[14px]">undo</span> RETRY
+        </button>
+      </div>
+      <div class="flex items-center justify-between pt-space-xs border-t border-surface-container">
+        <div class="flex items-center gap-1">
+          <div class="w-5 h-5 rounded-full bg-surface-container-highest text-on-surface flex items-center justify-center font-mono text-[9px] font-bold">OT</div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Oliver T.</span>
+        </div>
+        <span class="font-label-sm text-label-sm text-primary font-mono font-bold">+₱28,000</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 08: POSTED -->
+  <div class="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-space-sm shadow-sm" data-col="posted">
+    <div class="p-space-xs bg-surface-container rounded flex items-center justify-between">
+      <div class="flex items-center gap-space-xs">
+        <span class="w-6 h-6 rounded bg-secondary-container text-on-secondary-container flex items-center justify-center font-mono font-bold text-label-sm">08</span>
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-wide text-secondary font-bold block">Posted</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant block font-mono">Chloe Bennett</span>
+        </div>
+      </div>
+      <span class="px-space-xs py-0.5 rounded bg-secondary-container text-on-secondary-container font-mono text-label-sm font-bold">DONE (2)</span>
+    </div>
+    <!-- Reel Card 83 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-md hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-0.5" onclick="selectReelCard('reel-83')">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1">
+          <span class="font-label-sm text-label-sm bg-surface-container-high px-1.5 py-0.5 rounded font-mono font-bold text-primary">#EP-83</span>
+          <span class="font-label-sm text-label-sm text-secondary font-bold font-mono">LIVE 45m</span>
+        </div>
+        <span class="material-symbols-outlined text-secondary text-[16px] anim-paperplane">send</span>
+      </div>
+      <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight group-hover:text-primary transition-colors">
+        Why 99% Of Short Form Creators Fail
+      </h3>
+      <div class="bg-surface-container p-space-xs rounded flex flex-col gap-1 text-label-sm font-mono">
+        <div class="flex justify-between items-center">
+          <span class="text-on-surface-variant">Status</span>
+          <span class="text-secondary font-bold">DONE / 14.2k views</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-on-surface-variant">Blasted</span>
+          <span class="text-on-surface font-bold">4 Platforms</span>
+        </div>
+      </div>
+      <div class="flex items-center justify-between pt-space-xs border-t border-surface-container">
+        <div class="flex items-center gap-1">
+          <div class="w-5 h-5 rounded-full bg-secondary-fixed-dim text-on-secondary-fixed flex items-center justify-center font-mono text-[9px] font-bold">CB</div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant font-mono">Chloe B.</span>
+        </div>
+        <span class="font-label-sm text-label-sm text-secondary font-mono font-bold">₱42,500</span>
+      </div>
+    </div>
+    <!-- Reel Card 82 -->
+    <div class="bg-surface rounded-lg p-space-sm flex flex-col gap-space-xs shadow-md opacity-75 hover:opacity-100 transition-opacity cursor-pointer group" onclick="selectReelCard('reel-82')">
+      <div class="flex items-center justify-between">
+        <span class="font-label-sm text-label-sm bg-surface-container-high px-1.5 py-0.5 rounded font-mono font-bold text-on-surface-variant">#EP-82</span>
+        <span class="font-label-sm text-label-sm text-secondary font-mono font-bold">DONE</span>
+      </div>
+      <h4 class="font-headline-sm text-headline-sm text-on-surface font-bold leading-tight">
+        The Ultimate Markdown Note Taking Workflow
+      </h4>
+      <div class="flex items-center justify-between pt-space-xs font-mono text-label-sm border-t border-surface-container">
+        <span class="text-on-surface-variant">Earned:</span>
+        <span class="text-secondary font-bold">₱38,900</span>
+      </div>
+    </div>
+  </div>
+</div></div>
+</div>
+<!-- Bottom Inspection Ledger & Station Command Tray -->
+<div class="mx-margin mb-margin bg-surface-container-high rounded-xl p-space-md shadow-xl border-t border-surface-variant">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-md items-center">
+<!-- Reel Spotlight Metadata -->
+<div class="lg:col-span-4 flex items-center gap-space-md">
+<div class="w-16 h-16 rounded bg-surface-container-lowest p-1 flex items-center justify-center shrink-0 shadow-inner">
+<img class="w-full h-full object-contain" data-alt="16-bit pixel art cartridge reel disk glowing in amber and gold retro game inventory item" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBNr_sqxLTrPtrYZ97tOJmmSyK9NM8rY9RnwnbkXvKS1v8OyP24WwgF6M8NWKcbcDr0aiE_yZjwYiFpZHQtKEtjAVt-aPi8DH1C7UjwMDN0T67QtXn_vE08It9JnfO3nRBC5Ow_zJKg8wb0yzw8WeAOGIOX6qaILo71Wg2kmZ_oLyVoApNJLrtAePOxWEbtDg0TjH2LAoVVchW8iO7JgthXiA_XPQrCGVR45-ZIsNzA">
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-sm text-label-sm bg-primary text-on-primary px-1.5 py-0.2 rounded font-mono font-bold">SELECTED INSPECTION</span>
+<span class="font-label-sm text-label-sm text-secondary font-bold font-mono">EPISODE #84</span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface font-bold truncate">Top 5 AI Hacks That Feel Illegal</h4>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Duration: 00:30 • ProRes 422 HQ • Assigned: Oliver Thorne</span>
+</div>
+</div>
+<!-- Quick Script & Morale Snapshot -->
+<div class="lg:col-span-4 grid grid-cols-2 gap-space-xs bg-surface-container p-space-xs rounded">
+<div class="flex flex-col justify-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-mono">SCRIPT HOOK SAMPLE</span>
+<p class="font-body-sm text-body-sm text-on-surface italic line-clamp-1">"If you're still typing prompts by hand, stop..."</p>
+</div>
+<div class="flex flex-col justify-center">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-mono">STAFF SPRINT MORALE</span>
+<div class="flex items-center gap-space-xs">
+<div class="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+<div class="bg-secondary h-full w-[94%]"></div>
+</div>
+<span class="font-mono text-label-sm font-bold text-secondary">94%</span>
+</div>
+</div>
+</div>
+<!-- Boss Order Quick Commands -->
+<div class="lg:col-span-4 flex flex-wrap lg:flex-nowrap items-center justify-end gap-space-xs">
+<button class="px-space-md py-space-sm bg-surface-container hover:bg-surface-container-highest text-on-surface font-label-sm text-label-sm rounded flex items-center gap-1 transition-all active:translate-y-0.5 shadow-sm" onclick="triggerCoffeeRun()" type="button">
+<span class="material-symbols-outlined text-[16px] text-amber-500">coffee</span>
+<span>COFFEE RUN (ALL)</span>
+</button>
+<button class="px-space-md py-space-sm bg-primary-container text-on-primary-container hover:brightness-110 font-label-sm text-label-sm rounded font-bold flex items-center gap-1 transition-all active:translate-y-0.5 shadow-sm" onclick="triggerPriorityBump('84')" type="button">
+<span class="material-symbols-outlined text-[16px]">rocket_launch</span>
+<span>BUMP PRIORITY (+₱500)</span>
+</button>
+<button class="px-space-md py-space-sm bg-secondary text-on-secondary hover:bg-secondary-container font-label-sm text-label-sm rounded font-bold flex items-center gap-1 transition-all active:translate-y-0.5 shadow-sm" onclick="openDirectNote('84')" type="button">
+<span class="material-symbols-outlined text-[16px]">chat</span>
+<span>DIRECT NOTE</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Interactive Modal Container for New Order -->
+<div class="fixed inset-0 z-50 bg-inverse-surface/60 backdrop-blur-sm hidden items-center justify-center p-space-md" id="modal-new-order">
+<div class="w-full max-w-lg bg-surface-container-lowest text-on-surface rounded-xl p-space-lg shadow-2xl flex flex-col gap-space-md border border-surface-variant">
+<div class="flex items-center justify-between pb-space-xs border-b border-surface-container">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[24px]">add_box</span>
+<h3 class="font-headline-md text-headline-md font-bold">New Reel Order Cartridge</h3>
+</div>
+<button class="text-on-surface-variant hover:text-on-surface" onclick="closeNewOrderModal()" type="button">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<div class="flex flex-col gap-space-sm font-mono text-body-sm">
+<div>
+<label class="block font-label-sm text-label-sm text-on-surface-variant mb-1">REEL EPISODE TITLE</label>
+<input class="w-full bg-surface-container text-on-surface px-3 py-2 rounded focus:outline-none shadow-inner" id="new-reel-title" placeholder="e.g. 7 Hidden Settings in VS Code..." type="text">
+</div>
+<div class="grid grid-cols-2 gap-space-sm">
+<div>
+<label class="block font-label-sm text-label-sm text-on-surface-variant mb-1">ESTIMATED PAYOUT</label>
+<input class="w-full bg-surface-container text-on-surface px-3 py-2 rounded focus:outline-none shadow-inner" id="new-reel-payout" type="text" value="₱ 38,000">
+</div>
+<div>
+<label class="block font-label-sm text-label-sm text-on-surface-variant mb-1">LEAD WRITER</label>
+<select class="w-full bg-surface-container text-on-surface px-3 py-2 rounded focus:outline-none shadow-inner font-bold">
+<option>Elena Rostova</option>
+<option>Kaito Tanaka</option>
+<option>Maya Vance</option>
+</select>
+</div>
+</div>
+<div>
+<label class="block font-label-sm text-label-sm text-on-surface-variant mb-1">TARGET TAGS</label>
+<input class="w-full bg-surface-container text-on-surface px-3 py-2 rounded focus:outline-none shadow-inner" id="new-reel-tags" type="text" value="#Coding, #Tutorial, #Retro">
+</div>
+</div>
+<div class="flex items-center justify-end gap-space-sm pt-space-xs border-t border-surface-container">
+<button class="px-space-md py-space-xs font-label-sm text-label-sm text-on-surface-variant hover:text-on-surface" onclick="closeNewOrderModal()" type="button">CANCEL</button>
+<button class="px-space-lg py-space-sm bg-primary text-on-primary hover:bg-primary-container font-label-md text-label-md rounded font-bold shadow-md" onclick="submitNewOrder()" type="button">CREATE &amp; DISPATCH</button>
+</div>
+</div>
+</div>
+</div>
+<script>
+  function selectReelCard(reelId) {
+    const card = document.getElementById('card-reel-84');
+    if (reelId === 'reel-84') {
+      card.classList.add('ring-4', 'ring-primary');
+      setTimeout(() => card.classList.remove('ring-4'), 800);
+    }
+    const bossInput = document.getElementById('boss-chat-input');
+    if (bossInput) {
+      bossInput.value = "Inspecting Reel " + reelId.toUpperCase() + ": ";
+      bossInput.focus();
+    }
+  }
+
+  function approveReel(id) {
+    alert("STAMP APPROVED! Episode #" + id + " pushed to 'Published / Ready to Blast' column. +₱28,000 added to vault!");
+  }
+
+  function sendBackReel(id) {
+    alert("RETRY DISPATCHED: Episode #" + id + " flagged back to Editing Bay for frame cleanup.");
+  }
+
+  function triggerCoffeeRun() {
+    alert("☕ INSTANT COFFEE RUN DELIVERED! All editor stations have received +15% velocity speed boost for 45 minutes!");
+  }
+
+  function triggerPriorityBump(id) {
+    alert("🚀 PRIORITY BUMP ACTIVATED: Episode #" + id + " shifted to head of rendering queue.");
+  }
+
+  function openDirectNote(id) {
+    const bossInput = document.getElementById('boss-chat-input');
+    if (bossInput) {
+      bossInput.value = "@Oliver @Samira Re: Episode #" + id + " - Looks great, check audio punch at 00:14.";
+      bossInput.focus();
+    }
+  }
+
+  function nudgeStation(stationName) {
+    alert("⚡ Nudge ping sent to " + stationName + "! Worker morale boosted, ETA reduced.");
+  }
+
+  function triggerNewOrderModal() {
+    const modal = document.getElementById('modal-new-order');
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+  }
+
+  function closeNewOrderModal() {
+    const modal = document.getElementById('modal-new-order');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+  }
+
+  function submitNewOrder() {
+    const title = document.getElementById('new-reel-title').value || "New Hot Short";
+    alert("ORDER CREATED: '" + title + "' dispatched to Station 01 (Elena Rostova)!");
+    closeNewOrderModal();
+  }
+
+  function filterCards(query) {
+    const cards = document.querySelectorAll('[data-col] .group');
+    const term = query.toLowerCase();
+    cards.forEach(card => {
+      const text = card.innerText.toLowerCase();
+      if (!term || text.includes(term)) {
+        card.style.display = '';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+  }
+
+  function setTagFilter(filterType) {
+    const cards = document.querySelectorAll('[data-col] .group');
+    cards.forEach(card => {
+      if (filterType === 'all') {
+        card.style.display = '';
+      } else if (filterType === 'rush') {
+        card.style.display = card.innerText.includes('RUSH') || card.innerText.includes('BOOSTED') ? '' : 'none';
+      } else if (filterType === 'qa') {
+        card.style.display = card.innerText.includes('QA') || card.innerText.includes('APPROVAL') ? '' : 'none';
+      } else if (filterType === 'blocked') {
+        card.style.display = card.innerText.includes('Dwell') || card.innerText.includes('Sync') ? '' : 'none';
+      } else if (filterType === 'published') {
+        card.style.display = card.innerText.includes('LIVE') || card.innerText.includes('Completed') ? '' : 'none';
+      }
+    });
+  }
+</script></main></div><footer class="fixed bottom-0 left-0 right-0 z-50 h-16 bg-[#151824] border-t border-[#262a3d] shadow-[0_-4px_20px_rgba(0,0,0,0.5)]"><div class="w-full h-full px-gutter flex items-center justify-between gap-space-md"><div class="flex-1 max-w-2xl flex items-center gap-space-sm bg-[#0c0e17] border border-[#242b3f] px-space-md py-space-xs rounded shadow-inner"><span class="material-symbols-outlined text-primary text-[20px]">terminal</span><input class="w-full bg-transparent font-label-sm text-label-sm text-white placeholder:text-slate-500 focus:outline-none" id="boss-chat-input" onkeydown="if(event.key==='Enter') sendBossOrder()" placeholder="Small Boss Chat Box: Issue orders to whole team (e.g. 'Order pizza (+15% dev speed)', 'Fast-track hook')" type="text"><button class="bg-primary-container text-on-primary-container font-label-sm text-label-sm px-space-md py-space-xs rounded hover:brightness-110 transition-all font-bold shadow" onclick="sendBossOrder()" type="button">SEND</button></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><button class="w-8 h-8 rounded bg-[#1d2235] border border-[#2b334d] flex items-center justify-center text-slate-300 hover:text-white hover:bg-[#282f48]" type="button"><span class="material-symbols-outlined text-[18px]">volume_up</span></button><button class="w-8 h-8 rounded bg-[#1d2235] border border-[#2b334d] flex items-center justify-center text-slate-300 hover:text-white hover:bg-[#282f48]" type="button"><span class="material-symbols-outlined text-[18px]">music_note</span></button></div><span class="font-label-sm text-label-sm text-slate-400 hidden lg:inline font-mono">FPS: 60 | SPRITES: 128</span></div></div></footer>
+
+
+</body></html>
