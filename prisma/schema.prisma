@@ -1,0 +1,156 @@
+// Pixel-Art Office - Prisma schema (SQL Server 2025)
+// Conventions: ids UNIQUEIDENTIFIER (or INT IDENTITY for append-only logs),
+// JSON stored as NVARCHAR(MAX) text and validated with zod in app code,
+// timestamps DATETIME2. Secondary relations use NoAction to avoid
+// SQL Server "multiple cascade paths" errors.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+/// One of the 8 AI employees. id is the role key, e.g. "producer".
+model Employee {
+  id            String         @id @db.NVarChar(32)
+  name          String         @db.NVarChar(64)
+  title         String         @db.NVarChar(64)
+  sortOrder     Int
+  activeVersion Int            @default(1)
+  createdAt     DateTime       @default(now()) @db.DateTime2
+  updatedAt     DateTime       @updatedAt @db.DateTime2
+  skills        SkillVersion[]
+}
+
+/// Versioned skill JSON: { prompt, provider, model, params, outputSchema }.
+model SkillVersion {
+  id         String   @id @default(uuid()) @db.UniqueIdentifier
+  employeeId String   @db.NVarChar(32)
+  version    Int
+  skillJson  String   @db.NVarChar(Max)
+  note       String?  @db.NVarChar(400)
+  createdAt  DateTime @default(now()) @db.DateTime2
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([employeeId, version])
+}
+
+model Job {
+  id        String         @id @default(uuid()) @db.UniqueIdentifier
+  title     String         @db.NVarChar(200)
+  briefJson String         @db.NVarChar(Max)
+  state     String         @default("BRIEFED") @db.NVarChar(32)
+  mock      Boolean        @default(true)
+  error     String?        @db.NVarChar(Max)
+  createdAt DateTime       @default(now()) @db.DateTime2
+  updatedAt DateTime       @updatedAt @db.DateTime2
+  stageRuns StageRun[]
+  artifacts Artifact[]
+  logs      LogEntry[]
+  gates     GateDecision[]
+  ledger    LedgerEntry[]
+
+  @@index([state])
+}
+
+/// One execution of a pipeline stage. inputHash enables idempotent re-runs.
+model StageRun {
+  id         String    @id @default(uuid()) @db.UniqueIdentifier
+  jobId      String    @db.UniqueIdentifier
+  stage      String    @db.NVarChar(32)
+  employeeId String    @db.NVarChar(32)
+  status     String    @db.NVarChar(16)
+  attempt    Int       @default(1)
+  inputHash  String    @db.NVarChar(64)
+  outputJson String?   @db.NVarChar(Max)
+  error      String?   @db.NVarChar(Max)
+  startedAt  DateTime  @default(now()) @db.DateTime2
+  finishedAt DateTime? @db.DateTime2
+  job        Job       @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([jobId, stage])
+  @@index([stage, inputHash])
+}
+
+model Artifact {
+  id         String   @id @default(uuid()) @db.UniqueIdentifier
+  jobId      String   @db.UniqueIdentifier
+  stageRunId String?  @db.UniqueIdentifier
+  kind       String   @db.NVarChar(32)
+  path       String   @db.NVarChar(400)
+  mime       String   @db.NVarChar(64)
+  metaJson   String?  @db.NVarChar(Max)
+  createdAt  DateTime @default(now()) @db.DateTime2
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([jobId, kind])
+}
+
+model LogEntry {
+  id         Int      @id @default(autoincrement())
+  jobId      String?  @db.UniqueIdentifier
+  employeeId String?  @db.NVarChar(32)
+  level      String   @db.NVarChar(8)
+  message    String   @db.NVarChar(Max)
+  dataJson   String?  @db.NVarChar(Max)
+  createdAt  DateTime @default(now()) @db.DateTime2
+  job        Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([jobId, createdAt])
+  @@index([employeeId, createdAt])
+}
+
+/// Human gate decisions (SCRIPT_REVIEW, KEYFRAME_REVIEW).
+model GateDecision {
+  id        String   @id @default(uuid()) @db.UniqueIdentifier
+  jobId     String   @db.UniqueIdentifier
+  gate      String   @db.NVarChar(32)
+  decision  String   @db.NVarChar(16)
+  comment   String?  @db.NVarChar(Max)
+  createdAt DateTime @default(now()) @db.DateTime2
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([jobId, gate])
+}
+
+/// Unit prices. Every estimate shown in the UI is labelled "est.".
+model Price {
+  id           String   @id @default(uuid()) @db.UniqueIdentifier
+  provider     String   @db.NVarChar(32)
+  model        String   @db.NVarChar(100)
+  unit         String   @db.NVarChar(32)
+  unitPriceUsd Decimal  @db.Decimal(18, 6)
+  sourceUrl    String   @db.NVarChar(400)
+  checkedAt    DateTime @db.DateTime2
+  verified     Boolean  @default(false)
+
+  @@unique([provider, model, unit])
+}
+
+/// Reserve-before / commit-after budget ledger.
+model LedgerEntry {
+  id         String   @id @default(uuid()) @db.UniqueIdentifier
+  jobId      String?  @db.UniqueIdentifier
+  stageRunId String?  @db.UniqueIdentifier
+  provider   String   @db.NVarChar(32)
+  model      String   @db.NVarChar(100)
+  units      Decimal  @db.Decimal(18, 6)
+  estUsd     Decimal  @db.Decimal(18, 6)
+  actualUsd  Decimal? @db.Decimal(18, 6)
+  status     String   @db.NVarChar(16)
+  createdAt  DateTime @default(now()) @db.DateTime2
+  updatedAt  DateTime @updatedAt @db.DateTime2
+  job        Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([jobId])
+  @@index([createdAt])
+}
+
+model Setting {
+  key       String   @id @db.NVarChar(64)
+  valueJson String   @db.NVarChar(Max)
+  updatedAt DateTime @updatedAt @db.DateTime2
+}

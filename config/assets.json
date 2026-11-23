@@ -1,0 +1,21 @@
+{
+  "$comment": "Asset config for the office scene (phase 3). Placeholder coloured sprites are used until a pack is set here. Drop licensed packs in public/assets/packs/<name>/ (gitignored) and record them in ATTRIBUTIONS.md.",
+  "tileSize": 16,
+  "scale": 3,
+  "tileset": {
+    "pack": null,
+    "image": null,
+    "floorTile": null,
+    "wallTile": null
+  },
+  "characters": {
+    "pack": null,
+    "frameWidth": 16,
+    "frameHeight": 24,
+    "states": ["idle", "thinking", "working", "done", "error", "waiting"],
+    "sprites": {}
+  },
+  "placeholder": {
+    "useRosterColors": true
+  }
+}

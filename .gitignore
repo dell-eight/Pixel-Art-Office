@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# env / secrets (never commit real keys)
+.env
+.env.*
+!.env.example
+
+# runtime data (generated keyframes, clips, reels, sqlite fallback db)
+data/
+prisma/*.db
+prisma/*.db-journal
+
+# paid / licensed art packs: drop them in public/assets/packs/ locally
+public/assets/packs/*
+!public/assets/packs/README.md
+
+# misc
+.DS_Store
+Thumbs.db
+coverage/
+*.log
