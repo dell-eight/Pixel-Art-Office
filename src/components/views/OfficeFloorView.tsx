@@ -1,9 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import {
+  GateReviewPanel,
+  type GateDecisionItem,
+  type GateReviewSubmission,
+  type KeyframeItem,
+} from "@/components/gates/GateReviewPanel";
 import { DiodeChip } from "@/components/ui/DiodeChip";
 import { MechanicalButton } from "@/components/ui/MechanicalButton";
 import type { Role } from "@/shared/roster";
+import type { Script, Social } from "@/shared/schemas";
 
 export interface EmployeeInfo {
   id: Role;
@@ -33,6 +40,34 @@ export interface CourierState {
   active: boolean;
 }
 
+export interface SkillHistoryItem {
+  version: number;
+  note?: string | null;
+  createdAt: string;
+  prompt: string;
+}
+
+export interface EmployeeStatsData {
+  runsThisMonth: number;
+  successRatePercent: number;
+  avgDurationSec: number;
+  avgCostEstPhp: number;
+  monthSpendEstUsd: number;
+  monthSpendEstPhp: number;
+  monthUnitsEst: number;
+  jobSpendEstUsd: number;
+  jobSpendEstPhp: number;
+  jobUnitsEst: number;
+}
+
+export interface JobArtifactsBundle {
+  keyframes: KeyframeItem[];
+  voice: { id: string; beat?: number; durationSec?: number }[];
+  clips: { id: string; beat?: number; seconds?: number }[];
+  reelId?: string;
+  thumbnailId?: string;
+}
+
 export interface OfficeFloorViewProps {
   employees: EmployeeInfo[];
   selectedEmployee: Role | null;
@@ -45,26 +80,31 @@ export interface OfficeFloorViewProps {
   } | null;
   courier?: CourierState | null;
   gates: GateInfo[];
-  onApproveGate: (
+  onOpenGateModal: (jobId: string, gate: "SCRIPT_REVIEW" | "KEYFRAME_REVIEW") => void;
+  onGateSubmit: (
     jobId: string,
     gate: "SCRIPT_REVIEW" | "KEYFRAME_REVIEW",
-    decision: "approved" | "rejected",
-    comment?: string,
-  ) => void;
+    payload: GateReviewSubmission,
+  ) => Promise<void> | void;
+  onSaveSkill: (role: Role, prompt: string, note?: string) => Promise<void>;
+  onRollbackSkill: (role: Role, version: number) => Promise<void>;
   inspectorData?: {
     skillPrompt?: string;
     provider?: string;
     model?: string;
     activeVersion?: number;
+    checklist?: readonly string[];
+    skillHistory?: SkillHistoryItem[];
     latestOutput?: string;
-    reelArtifactId?: string;
+    parsedScript?: Script | null;
+    parsedSocial?: Social | null;
+    artifacts?: JobArtifactsBundle;
+    gateHistory?: GateDecisionItem[];
     logs?: { id: string; level: string; message: string; timestamp: string }[];
-    spendJobEst?: number;
-    spendMonthEst?: number;
+    stats?: EmployeeStatsData;
   } | null;
 }
 
-/** Percentage coordinates inside the floor canvas so the courier walks directly between desks and gates. */
 const COURIER_WAYPOINTS: Record<string, { x: number; y: number; label: string }> = {
   producer: { x: 12.5, y: 20, label: "Producer" },
   scriptwriter: { x: 37.5, y: 20, label: "Scriptwriter" },
@@ -116,11 +156,17 @@ export function OfficeFloorView({
   activeJob,
   courier,
   gates,
-  onApproveGate,
+  onOpenGateModal,
+  onGateSubmit,
+  onSaveSkill,
+  onRollbackSkill,
   inspectorData,
 }: OfficeFloorViewProps) {
   const [inspectorTab, setInspectorTab] = useState<"skill" | "output" | "logs" | "cost">("skill");
-  const [comment, setComment] = useState("");
+  const [editedPrompt, setEditedPrompt] = useState("");
+  const [versionNote, setVersionNote] = useState("");
+  const [savingSkill, setSavingSkill] = useState(false);
+  const [copiedPlatform, setCopiedPlatform] = useState<string | null>(null);
 
   const activeEmp = employees.find((e) => e.id === selectedEmployee) ?? employees[0];
   const waitingGate = gates.find((g) => g.isWaiting);
@@ -129,6 +175,21 @@ export function OfficeFloorView({
   const currentStep = stepIndexForState(activeJob?.state);
 
   const courierCoord = courier ? COURIER_WAYPOINTS[courier.pos] ?? COURIER_WAYPOINTS.producer : null;
+
+  useEffect(() => {
+    setEditedPrompt(inspectorData?.skillPrompt ?? "");
+  }, [activeEmp.id, inspectorData?.skillPrompt, inspectorData?.activeVersion]);
+
+  const handleSaveSkill = async () => {
+    if (savingSkill || !editedPrompt.trim()) return;
+    setSavingSkill(true);
+    try {
+      await onSaveSkill(activeEmp.id, editedPrompt, versionNote.trim() || undefined);
+      setVersionNote("");
+    } finally {
+      setSavingSkill(false);
+    }
+  };
 
   const renderDeskCard = (emp: EmployeeInfo) => {
     const isSelected = selectedEmployee === emp.id;
@@ -152,7 +213,6 @@ export function OfficeFloorView({
                   : "bg-[#191b27]/90 border-[#272a3b] hover:border-outline hover:bg-[#191b27]"
         }`}
       >
-        {/* Working / Waiting Speech Bubble */}
         {(isWorking || isWaiting) && (
           <div className="absolute -top-2.5 right-2 px-2 py-0.5 rounded bg-primary-container text-[#0b0d19] font-mono text-[10px] font-bold shadow border border-primary z-20 animate-bounce">
             {isWorking
@@ -161,13 +221,11 @@ export function OfficeFloorView({
           </div>
         )}
 
-        {/* Station Header */}
         <div className="flex items-center justify-between mb-2">
           <span className="font-mono text-label-xs text-outline uppercase">{emp.desk}</span>
           <DiodeChip status={emp.status} />
         </div>
 
-        {/* Character Avatar & Desk Prop */}
         <div className="flex items-center gap-2.5 my-2">
           <div
             className={`w-9 h-9 rounded border border-[#272a3b] flex items-center justify-center shrink-0 ${
@@ -198,7 +256,6 @@ export function OfficeFloorView({
           </div>
         </div>
 
-        {/* Live Stage Progress Bar */}
         {isWorking && (
           <div className="mt-1 mb-2">
             <div className="w-full h-1.5 bg-surface-container-lowest border border-[#272a3b] rounded overflow-hidden">
@@ -215,7 +272,6 @@ export function OfficeFloorView({
           </div>
         )}
 
-        {/* Desk Prop Indicator */}
         <div className="flex items-center justify-between pt-2 border-t border-[#272a3b]/60 text-label-xs font-mono text-on-surface-variant">
           <span>PROP: {emp.prop}</span>
           <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
@@ -224,11 +280,139 @@ export function OfficeFloorView({
     );
   };
 
+  const renderRoleOutput = () => {
+    const arts = inspectorData?.artifacts;
+    const role = activeEmp.id;
+
+    if (role === "scriptwriter" && inspectorData?.parsedScript) {
+      const s = inspectorData.parsedScript;
+      return (
+        <div className="space-y-2">
+          <div className="p-2 bg-surface-container border border-[#272a3b] rounded">
+            <div className="text-[10px] text-outline uppercase">Title & Hook</div>
+            <div className="text-label-sm font-bold text-on-surface">{s.title}</div>
+            <div className="text-label-xs text-primary mt-1">{s.hook}</div>
+          </div>
+          {s.beats.map((b) => (
+            <div key={b.index} className="p-2 bg-surface-container-lowest border border-[#272a3b] rounded space-y-1">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-primary font-bold">Beat {b.index + 1} (+{b.so_you_add})</span>
+                <span className="text-secondary">{b.seconds}s</span>
+              </div>
+              <div className="text-[11px] text-on-surface">{b.narration}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (role === "illustrator" && arts && arts.keyframes.length > 0) {
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          {arts.keyframes.map((kf) => (
+            <div key={kf.id} className="p-1.5 bg-surface-container-lowest border border-[#272a3b] rounded">
+              <div className="aspect-[9/16] bg-black rounded overflow-hidden mb-1">
+                <img
+                  src={`/api/artifacts/${kf.id}`}
+                  alt={`Keyframe K${kf.index}`}
+                  className="w-full h-full object-cover pixelated"
+                />
+              </div>
+              <div className="text-[10px] text-primary font-bold">
+                K{kf.index} {kf.revised ? "(REVISED)" : ""}
+              </div>
+              {kf.addObject && <div className="text-[10px] text-on-surface-variant truncate">{kf.addObject}</div>}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (role === "voiceActor" && arts && arts.voice.length > 0) {
+      return (
+        <div className="space-y-2">
+          {arts.voice.map((v, idx) => (
+            <div key={v.id} className="p-2 bg-surface-container-lowest border border-[#272a3b] rounded space-y-1">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-primary font-bold">Beat {(v.beat ?? idx) + 1} Voice</span>
+                {v.durationSec && <span className="text-secondary">{v.durationSec}s</span>}
+              </div>
+              <audio controls preload="metadata" src={`/api/artifacts/${v.id}`} className="w-full h-8" />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (role === "animator" && arts && arts.clips.length > 0) {
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          {arts.clips.map((c, idx) => (
+            <div key={c.id} className="p-1.5 bg-surface-container-lowest border border-[#272a3b] rounded space-y-1">
+              <div className="text-[10px] text-primary font-bold">
+                Clip {(c.beat ?? idx) + 1} {c.seconds ? `(${c.seconds}s)` : ""}
+              </div>
+              <video controls preload="metadata" src={`/api/artifacts/${c.id}`} className="w-full rounded bg-black" />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (role === "socialManager" && inspectorData?.parsedSocial) {
+      return (
+        <div className="space-y-2">
+          {inspectorData.parsedSocial.posts.map((p) => (
+            <div key={p.platform} className="p-2.5 bg-surface-container-lowest border border-[#272a3b] rounded space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-label-xs font-bold uppercase text-primary">{p.platform}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(`${p.caption}\n\n${p.hashtags.join(" ")}\n\n${p.aiDisclosure}`);
+                    setCopiedPlatform(p.platform);
+                    setTimeout(() => setCopiedPlatform(null), 1500);
+                  }}
+                  className="px-2 py-0.5 bg-surface-container border border-[#272a3b] rounded text-[10px] text-on-surface hover:border-primary"
+                >
+                  {copiedPlatform === p.platform ? "COPIED!" : "COPY"}
+                </button>
+              </div>
+              <div className="text-label-xs text-on-surface">{p.caption}</div>
+              <div className="text-[11px] text-tertiary">{p.hashtags.join(" ")}</div>
+              <div className="p-1.5 bg-secondary/10 border border-secondary/30 rounded text-[10px] text-secondary">
+                AI Label: {p.aiLabelFlag ? "ON" : "OFF"} · {p.aiDisclosure}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        {arts?.reelId && role === "editor" && (
+          <video
+            controls
+            preload="metadata"
+            src={`/api/artifacts/${arts.reelId}`}
+            poster={arts.thumbnailId ? `/api/artifacts/${arts.thumbnailId}` : undefined}
+            className="w-full max-h-64 rounded border border-[#272a3b] bg-black"
+          />
+        )}
+        <div className="p-2.5 bg-surface-container-lowest border border-[#272a3b] rounded text-body-xs text-on-surface max-h-72 overflow-y-auto whitespace-pre-wrap">
+          {inspectorData?.latestOutput || "No recent output generated for this employee yet."}
+        </div>
+      </div>
+    );
+  };
+
+  const stats = inspectorData?.stats;
+
   return (
     <div className="flex w-full h-[calc(100vh-6.5rem)] gap-4 overflow-hidden">
       {/* Floor Area */}
       <div className="flex-1 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl relative overflow-hidden">
-        {/* Floor HUD strip */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-surface-container border-b border-[#272a3b] text-on-surface">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[18px]">domain</span>
@@ -237,7 +421,6 @@ export function OfficeFloorView({
             </span>
           </div>
 
-          {/* 8-Segment Pipeline Progress Gauge */}
           <div className="hidden xl:flex items-center gap-1 bg-surface-container-lowest px-2 py-1 rounded border border-[#272a3b]">
             {PIPELINE_STEPS.map((st, idx) => {
               const done = currentStep > idx || activeJob?.state === "DONE";
@@ -263,19 +446,31 @@ export function OfficeFloorView({
           {activeJob && (
             <div
               className={`flex items-center gap-2 px-2.5 py-0.5 bg-surface-container-lowest rounded border ${
-                activeJob.state === "DONE" ? "border-secondary/40" : "border-primary/40"
+                activeJob.state === "DONE"
+                  ? "border-secondary/40"
+                  : activeJob.state === "REJECTED"
+                    ? "border-error/40"
+                    : "border-primary/40"
               }`}
             >
               <span
                 className={`material-symbols-outlined text-[16px] ${
-                  activeJob.state === "DONE" ? "text-secondary" : "text-primary animate-bounce"
+                  activeJob.state === "DONE"
+                    ? "text-secondary"
+                    : activeJob.state === "REJECTED"
+                      ? "text-error"
+                      : "text-primary animate-bounce"
                 }`}
               >
-                {activeJob.state === "DONE" ? "task_alt" : "folder"}
+                {activeJob.state === "DONE" ? "task_alt" : activeJob.state === "REJECTED" ? "block" : "folder"}
               </span>
               <span
                 className={`font-mono text-label-sm font-bold truncate max-w-[200px] ${
-                  activeJob.state === "DONE" ? "text-secondary" : "text-primary"
+                  activeJob.state === "DONE"
+                    ? "text-secondary"
+                    : activeJob.state === "REJECTED"
+                      ? "text-error"
+                      : "text-primary"
                 }`}
               >
                 {activeJob.title}
@@ -289,7 +484,6 @@ export function OfficeFloorView({
 
         {/* Isometric Parquet Floor Canvas */}
         <div className="flex-1 bg-parquet relative p-5 flex flex-col justify-between gap-4 overflow-y-auto">
-          {/* Row 1: Producer, Scriptwriter, Art Director, Illustrator */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
             {topRow.map(renderDeskCard)}
           </div>
@@ -299,9 +493,10 @@ export function OfficeFloorView({
             {gates.map((g) => (
               <div
                 key={g.name}
+                onClick={() => g.isWaiting && g.jobId && onOpenGateModal(g.jobId, g.name)}
                 className={`relative flex items-center gap-3 px-3.5 py-2 rounded border transition-all ${
                   g.isWaiting
-                    ? "bg-primary-container/20 border-primary shadow-[0_0_14px_rgba(245,158,11,0.35)]"
+                    ? "bg-primary-container/20 border-primary shadow-[0_0_14px_rgba(245,158,11,0.35)] cursor-pointer"
                     : "bg-surface-container border-[#272a3b]"
                 }`}
               >
@@ -321,32 +516,37 @@ export function OfficeFloorView({
                   {g.isWaiting ? "lock_open" : "door_front"}
                 </span>
                 <div>
-                  <div className="font-mono text-label-sm font-bold text-on-surface">
-                    {g.label}
-                  </div>
+                  <div className="font-mono text-label-sm font-bold text-on-surface">{g.label}</div>
                   <div className="font-mono text-label-xs text-on-surface-variant">
                     {g.isWaiting ? "PAUSED FOR HUMAN APPROVAL" : "GATE CLEAR"}
                   </div>
                 </div>
                 {g.isWaiting && g.jobId && (
-                  <MechanicalButton
-                    size="sm"
-                    variant="primary"
-                    onClick={() => onApproveGate(g.jobId!, g.name, "approved")}
-                  >
-                    APPROVE
-                  </MechanicalButton>
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <MechanicalButton
+                      size="sm"
+                      variant="primary"
+                      onClick={() => onGateSubmit(g.jobId!, g.name, { decision: "approved" })}
+                    >
+                      APPROVE
+                    </MechanicalButton>
+                    <MechanicalButton
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => onOpenGateModal(g.jobId!, g.name)}
+                    >
+                      REVIEW
+                    </MechanicalButton>
+                  </div>
                 )}
               </div>
             ))}
           </div>
 
-          {/* Row 2: Animator, Voice Actor, Editor, Social Manager */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
             {bottomRow.map(renderDeskCard)}
           </div>
 
-          {/* Animated Walking Courier carrying the glowing Reel Folder */}
           {courier && courierCoord && (
             <div
               style={{
@@ -357,17 +557,11 @@ export function OfficeFloorView({
               className="pointer-events-none absolute z-30 transition-all duration-700 ease-in-out"
             >
               <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0b0d19]/95 border-2 border-primary rounded shadow-[0_0_16px_rgba(245,158,11,0.55)] animate-courier">
-                <span className="material-symbols-outlined text-primary text-[20px]">
-                  directions_walk
-                </span>
-                <span className="material-symbols-outlined text-secondary text-[18px]">
-                  folder_special
-                </span>
+                <span className="material-symbols-outlined text-primary text-[20px]">directions_walk</span>
+                <span className="material-symbols-outlined text-secondary text-[18px]">folder_special</span>
                 <div className="font-mono text-label-xs leading-tight whitespace-nowrap">
                   <div className="text-primary font-bold">{courier.label}</div>
-                  <div className="text-on-surface-variant truncate max-w-[180px]">
-                    {courier.jobTitle}
-                  </div>
+                  <div className="text-on-surface-variant truncate max-w-[180px]">{courier.jobTitle}</div>
                 </div>
               </div>
             </div>
@@ -375,14 +569,11 @@ export function OfficeFloorView({
         </div>
       </div>
 
-      {/* Docked Right Inspector (Employee Panel) */}
-      <div className="w-84 xl:w-96 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden shrink-0">
-        {/* Inspector Header */}
+      {/* Docked Right Inspector */}
+      <div className="w-84 xl:w-[26rem] flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden shrink-0">
         <div className="p-3 bg-surface-container border-b border-[#272a3b]">
           <div className="flex items-center justify-between mb-2">
-            <span className="font-mono text-label-xs text-outline uppercase">
-              EMPLOYEE INSPECTOR
-            </span>
+            <span className="font-mono text-label-xs text-outline uppercase">EMPLOYEE INSPECTOR</span>
             <DiodeChip status={activeEmp.status} />
           </div>
 
@@ -395,7 +586,7 @@ export function OfficeFloorView({
                 {activeEmp.name[0]}
               </span>
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="font-headline font-bold text-headline-sm text-on-surface truncate">
                 {activeEmp.name}
               </div>
@@ -404,9 +595,26 @@ export function OfficeFloorView({
               </div>
             </div>
           </div>
+
+          {/* Real Employee Stats Strip */}
+          {stats && (
+            <div className="grid grid-cols-3 gap-1.5 mt-2.5 pt-2 border-t border-[#272a3b] font-mono text-[10px] text-center">
+              <div className="bg-surface-container-lowest rounded py-1 border border-[#272a3b]">
+                <span className="text-outline block">SUCCESS</span>
+                <span className="text-secondary font-bold">{stats.successRatePercent}%</span>
+              </div>
+              <div className="bg-surface-container-lowest rounded py-1 border border-[#272a3b]">
+                <span className="text-outline block">RUNS (MO)</span>
+                <span className="text-on-surface font-bold">{stats.runsThisMonth}</span>
+              </div>
+              <div className="bg-surface-container-lowest rounded py-1 border border-[#272a3b]">
+                <span className="text-outline block">AVG DUR</span>
+                <span className="text-primary font-bold">{stats.avgDurationSec}s</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Tab selection */}
         <div className="flex border-b border-[#272a3b] bg-surface-container-lowest">
           {(["skill", "output", "logs", "cost"] as const).map((t) => (
             <button
@@ -423,92 +631,125 @@ export function OfficeFloorView({
           ))}
         </div>
 
-        {/* Inspector Body */}
         <div className="flex-1 p-3 overflow-y-auto font-mono text-body-sm space-y-3">
-          {/* Gate Review Actions if waiting */}
+          {/* Embedded Gate Review Panel when paused at Gate 1 or Gate 2 */}
           {waitingGate && waitingGate.jobId && (
-            <div className="p-3 bg-primary-container/10 border border-primary/40 rounded space-y-2">
-              <div className="flex items-center gap-1.5 text-primary font-bold text-label-sm">
-                <span className="material-symbols-outlined text-[16px]">gavel</span>
-                ACTION REQUIRED: {waitingGate.label}
-              </div>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Optional feedback or rejection comment..."
-                className="w-full bg-surface-container-lowest border border-[#272a3b] rounded p-2 text-label-sm font-mono text-on-surface"
-                rows={2}
+            <div className="p-2.5 bg-surface-container border border-primary/40 rounded">
+              <GateReviewPanel
+                jobId={waitingGate.jobId}
+                jobTitle={activeJob?.title ?? "Active Reel"}
+                gate={waitingGate.name}
+                script={inspectorData?.parsedScript}
+                keyframes={inspectorData?.artifacts?.keyframes}
+                gateHistory={inspectorData?.gateHistory}
+                compact
+                onSubmit={(payload) => onGateSubmit(waitingGate.jobId!, waitingGate.name, payload)}
               />
-              <div className="flex items-center gap-2">
-                <MechanicalButton
-                  size="sm"
-                  variant="primary"
-                  onClick={() => {
-                    onApproveGate(waitingGate.jobId!, waitingGate.name, "approved", comment);
-                    setComment("");
-                  }}
-                >
-                  APPROVE
-                </MechanicalButton>
-                <MechanicalButton
-                  size="sm"
-                  variant="danger"
-                  onClick={() => {
-                    onApproveGate(waitingGate.jobId!, waitingGate.name, "rejected", comment);
-                    setComment("");
-                  }}
-                >
-                  REJECT
-                </MechanicalButton>
-              </div>
             </div>
           )}
 
           {inspectorTab === "skill" && (
             <div className="space-y-3">
-              <div className="space-y-1">
-                <div className="text-label-xs text-outline uppercase">
-                  Active Prompt (v{inspectorData?.activeVersion ?? 1})
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-label-xs">
+                  <span className="text-outline uppercase">
+                    System Prompt (v{inspectorData?.activeVersion ?? 1})
+                  </span>
+                  <span className="text-primary font-bold">
+                    {inspectorData?.provider || "gemini"} · {inspectorData?.model || "mock"}
+                  </span>
                 </div>
-                <div className="p-2.5 bg-surface-container-lowest border border-[#272a3b] rounded text-body-xs text-on-surface max-h-48 overflow-y-auto whitespace-pre-wrap">
-                  {inspectorData?.skillPrompt || "Loading active skill prompt..."}
-                </div>
+                <textarea
+                  value={editedPrompt}
+                  onChange={(e) => setEditedPrompt(e.target.value)}
+                  rows={8}
+                  className="w-full p-2 bg-surface-container-lowest border border-[#272a3b] rounded text-body-xs text-on-surface font-mono focus:outline-none focus:border-primary"
+                />
+                <input
+                  type="text"
+                  value={versionNote}
+                  onChange={(e) => setVersionNote(e.target.value)}
+                  placeholder="Optional version note..."
+                  className="w-full px-2 py-1 bg-surface-container-lowest border border-[#272a3b] rounded text-label-xs text-on-surface"
+                />
+                <MechanicalButton
+                  size="sm"
+                  variant="primary"
+                  disabled={savingSkill}
+                  onClick={handleSaveSkill}
+                  className="w-full"
+                >
+                  {savingSkill ? "SAVING..." : "SAVE AS NEW VERSION"}
+                </MechanicalButton>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-label-sm">
-                <div className="p-2 bg-surface-container border border-[#272a3b] rounded">
-                  <span className="text-outline text-label-xs block">PROVIDER</span>
-                  <span className="text-primary font-bold">{inspectorData?.provider || "gemini"}</span>
+              {/* Quality Checklist */}
+              {inspectorData?.checklist && inspectorData.checklist.length > 0 && (
+                <div className="space-y-1 pt-2 border-t border-[#272a3b]">
+                  <div className="text-label-xs text-outline uppercase">Quality Checklist</div>
+                  <ul className="space-y-1 text-[11px] text-on-surface-variant">
+                    {inspectorData.checklist.map((c, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5">
+                        <span className="text-secondary">✓</span>
+                        <span>{c}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <div className="p-2 bg-surface-container border border-[#272a3b] rounded">
-                  <span className="text-outline text-label-xs block">MODEL</span>
-                  <span className="text-on-surface">{inspectorData?.model || "gemini-flash"}</span>
+              )}
+
+              {/* Version History & Rollback */}
+              {inspectorData?.skillHistory && inspectorData.skillHistory.length > 0 && (
+                <div className="space-y-1.5 pt-2 border-t border-[#272a3b]">
+                  <div className="text-label-xs text-outline uppercase">Version History</div>
+                  <div className="space-y-1 max-h-36 overflow-y-auto">
+                    {inspectorData.skillHistory.map((h) => {
+                      const isActive = h.version === inspectorData.activeVersion;
+                      return (
+                        <div
+                          key={h.version}
+                          className="p-2 bg-surface-container-lowest border border-[#272a3b] rounded flex items-center justify-between gap-2 text-[11px]"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-on-surface">
+                              v{h.version}{" "}
+                              {isActive && <span className="text-secondary">(ACTIVE)</span>}
+                            </div>
+                            <div className="text-[10px] text-outline truncate">
+                              {h.note || new Date(h.createdAt).toLocaleString()}
+                            </div>
+                          </div>
+                          {!isActive && (
+                            <button
+                              type="button"
+                              onClick={() => onRollbackSkill(activeEmp.id, h.version)}
+                              className="px-2 py-0.5 bg-surface-container border border-[#272a3b] rounded text-[10px] text-primary hover:border-primary shrink-0"
+                            >
+                              ROLLBACK
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
           {inspectorTab === "output" && (
             <div className="space-y-2">
-              <div className="text-label-xs text-outline uppercase">Latest Output Artifact</div>
-              {inspectorData?.reelArtifactId && (
-                <video
-                  controls
-                  preload="metadata"
-                  src={`/api/artifacts/${inspectorData.reelArtifactId}`}
-                  className="w-full max-h-64 rounded border border-[#272a3b] bg-black"
-                />
-              )}
-              <div className="p-2.5 bg-surface-container-lowest border border-[#272a3b] rounded text-body-xs text-on-surface max-h-72 overflow-y-auto whitespace-pre-wrap">
-                {inspectorData?.latestOutput || "No recent output generated for this employee yet."}
+              <div className="text-label-xs text-outline uppercase">
+                Latest Output ({activeEmp.title})
               </div>
+              {renderRoleOutput()}
             </div>
           )}
 
           {inspectorTab === "logs" && (
             <div className="space-y-2">
               <div className="text-label-xs text-outline uppercase">Activity & Stage Logs</div>
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              <div className="space-y-1.5 max-h-80 overflow-y-auto">
                 {inspectorData?.logs && inspectorData.logs.length > 0 ? (
                   inspectorData.logs.map((log) => (
                     <div
@@ -533,16 +774,36 @@ export function OfficeFloorView({
 
           {inspectorTab === "cost" && (
             <div className="space-y-3">
-              <div className="p-3 bg-surface-container border border-[#272a3b] rounded space-y-2">
-                <div className="text-label-xs text-outline uppercase">Job Spend (est.)</div>
+              <div className="p-3 bg-surface-container border border-[#272a3b] rounded space-y-1">
+                <div className="text-label-xs text-outline uppercase">Selected Job Cost (est.)</div>
                 <div className="font-mono text-headline-sm font-bold text-primary">
-                  ₱{(inspectorData?.spendJobEst ?? 0).toLocaleString()}
+                  ₱{(stats?.jobSpendEstPhp ?? 0).toLocaleString()} est.
+                </div>
+                <div className="text-label-xs text-on-surface-variant">
+                  ${(stats?.jobSpendEstUsd ?? 0).toFixed(4)} USD · est. {stats?.jobUnitsEst ?? 0} units/tokens
                 </div>
               </div>
-              <div className="p-3 bg-surface-container border border-[#272a3b] rounded space-y-2">
-                <div className="text-label-xs text-outline uppercase">Month Spend (est.)</div>
+              <div className="p-3 bg-surface-container border border-[#272a3b] rounded space-y-1">
+                <div className="text-label-xs text-outline uppercase">Month to Date (est.)</div>
                 <div className="font-mono text-headline-sm font-bold text-secondary">
-                  ₱{(inspectorData?.spendMonthEst ?? 0).toLocaleString()}
+                  ₱{(stats?.monthSpendEstPhp ?? 0).toLocaleString()} est.
+                </div>
+                <div className="text-label-xs text-on-surface-variant">
+                  ${(stats?.monthSpendEstUsd ?? 0).toFixed(4)} USD · est. {stats?.monthUnitsEst ?? 0} units/tokens
+                </div>
+              </div>
+              <div className="p-3 bg-surface-container border border-[#272a3b] rounded grid grid-cols-3 gap-2 text-center text-label-xs">
+                <div>
+                  <span className="text-outline block">SUCCESS</span>
+                  <span className="text-secondary font-bold">{stats?.successRatePercent ?? 100}%</span>
+                </div>
+                <div>
+                  <span className="text-outline block">RUNS (MO)</span>
+                  <span className="text-on-surface font-bold">{stats?.runsThisMonth ?? 0}</span>
+                </div>
+                <div>
+                  <span className="text-outline block">AVG DUR</span>
+                  <span className="text-primary font-bold">{stats?.avgDurationSec ?? 0}s</span>
                 </div>
               </div>
             </div>

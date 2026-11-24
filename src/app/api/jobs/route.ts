@@ -13,9 +13,11 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
       take: 50,
       include: {
-        stageRuns: { orderBy: { startedAt: "desc" }, take: 10 },
-        artifacts: true,
-        gates: true,
+        stageRuns: { orderBy: { startedAt: "desc" }, take: 30 },
+        artifacts: { orderBy: { createdAt: "asc" } },
+        gates: { orderBy: { createdAt: "desc" } },
+        logs: { orderBy: { createdAt: "desc" }, take: 40 },
+        ledger: true,
       },
     });
     return Response.json({ jobs });

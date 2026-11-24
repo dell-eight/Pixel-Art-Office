@@ -1,6 +1,12 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  GateReviewModal,
+  type GateDecisionItem,
+  type GateReviewSubmission,
+  type KeyframeItem,
+} from "@/components/gates/GateReviewPanel";
 import { CommandConsole, type PipelineEvent } from "@/components/layout/CommandConsole";
 import { Header } from "@/components/layout/Header";
 import { NewReelModal } from "@/components/layout/NewReelModal";
@@ -11,12 +17,18 @@ import {
   OfficeFloorView,
   type CourierState,
   type EmployeeInfo,
+  type EmployeeStatsData,
   type GateInfo,
+  type JobArtifactsBundle,
+  type SkillHistoryItem,
 } from "@/components/views/OfficeFloorView";
 import { PipelineKanbanView, type KanbanJob } from "@/components/views/PipelineKanbanView";
 import { SettingsView } from "@/components/views/SettingsView";
 import { StaffRosterView, type StaffMember } from "@/components/views/StaffRosterView";
+import { REROLL_CAPS } from "@/server/pipeline/types";
+import { EMPLOYEE_CHECKLISTS } from "@/shared/checklists";
 import { ROSTER, type EmployeeStatus, type Role } from "@/shared/roster";
+import type { Script, Social } from "@/shared/schemas";
 
 interface RawJobRecord {
   id: string;
@@ -35,6 +47,19 @@ interface RawJobRecord {
     id: string;
     kind: string;
     path: string;
+    metaJson?: string | null;
+  }[];
+  gates?: GateDecisionItem[];
+  logs?: {
+    id: number;
+    employeeId?: string | null;
+    level: string;
+    message: string;
+    createdAt: string;
+  }[];
+  ledger?: {
+    estUsd?: string | number;
+    actualUsd?: string | number | null;
   }[];
 }
 
@@ -45,6 +70,57 @@ interface EmployeeActivity {
   message?: string;
 }
 
+function parseMeta(metaJson?: string | null): Record<string, any> {
+  if (!metaJson) return {};
+  try {
+    return JSON.parse(metaJson);
+  } catch {
+    return {};
+  }
+}
+
+function buildJobArtifacts(job?: RawJobRecord | null): JobArtifactsBundle {
+  const kfByIndex = new Map<number, KeyframeItem>();
+  const voice: { id: string; beat?: number; durationSec?: number }[] = [];
+  const clips: { id: string; beat?: number; seconds?: number }[] = [];
+  let reelId: string | undefined;
+  let thumbnailId: string | undefined;
+
+  for (const a of job?.artifacts ?? []) {
+    const meta = parseMeta(a.metaJson);
+    if (a.kind === "keyframe") {
+      const idx = typeof meta.index === "number" ? meta.index : kfByIndex.size;
+      kfByIndex.set(idx, {
+        id: a.id,
+        index: idx,
+        addObject: meta.addObject,
+        revised: Boolean(meta.revised),
+      });
+    } else if (a.kind === "voice") {
+      voice.push({ id: a.id, beat: meta.beat, durationSec: meta.durationSec });
+    } else if (a.kind === "clip") {
+      clips.push({ id: a.id, beat: meta.beat, seconds: meta.seconds });
+    } else if (a.kind === "reel") {
+      reelId = a.id;
+    } else if (a.kind === "thumbnail") {
+      thumbnailId = a.id;
+    }
+  }
+
+  const keyframes = Array.from(kfByIndex.values()).sort((a, b) => a.index - b.index);
+  return { keyframes, voice, clips, reelId, thumbnailId };
+}
+
+function parseStageJson<T>(job: RawJobRecord | null | undefined, stage: string): T | null {
+  const run = job?.stageRuns?.find((sr) => sr.stage === stage && sr.status === "done" && sr.outputJson);
+  if (!run?.outputJson) return null;
+  try {
+    return JSON.parse(run.outputJson) as T;
+  } catch {
+    return null;
+  }
+}
+
 export default function AppStudio() {
   const [activeTab, setActiveTab] = useState<TabId>("office-floor");
   const [isPaused, setIsPaused] = useState(false);
@@ -52,8 +128,11 @@ export default function AppStudio() {
   const [isNewReelOpen, setIsNewReelOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Role>("producer");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [gateModal, setGateModal] = useState<{
+    jobId: string;
+    gate: "SCRIPT_REVIEW" | "KEYFRAME_REVIEW";
+  } | null>(null);
 
-  // Studio state
   const [rawJobs, setRawJobs] = useState<RawJobRecord[]>([]);
   const [jobs, setJobs] = useState<KanbanJob[]>([]);
   const [events, setEvents] = useState<PipelineEvent[]>([]);
@@ -61,6 +140,7 @@ export default function AppStudio() {
   const [courier, setCourier] = useState<CourierState | null>(null);
   const courierTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [selectedStats, setSelectedStats] = useState<EmployeeStatsData | undefined>(undefined);
   const [budgetData, setBudgetData] = useState({
     budgetCapPhp: 6000,
     fxUsdPhp: 58,
@@ -93,7 +173,7 @@ export default function AppStudio() {
           merged.push(item);
         }
       }
-      return merged.slice(-60);
+      return merged.slice(-80);
     });
   }, []);
 
@@ -104,21 +184,32 @@ export default function AppStudio() {
         const data = await res.json();
         const list: RawJobRecord[] = data.jobs || [];
         setRawJobs(list);
-        const mapped: KanbanJob[] = list.map((j) => ({
-          id: j.id,
-          title: j.title,
-          state: j.state,
-          progressPercent: calculateProgress(j.state),
-          costEstPhp: 48,
-          error: j.error ?? undefined,
-          createdAt: j.createdAt,
-        }));
+        const mapped: KanbanJob[] = list.map((j) => {
+          const arts = buildJobArtifacts(j);
+          const usd = (j.ledger ?? []).reduce(
+            (s, l) => s + Number(l.actualUsd ?? l.estUsd ?? 0),
+            0,
+          );
+          const php = Math.round(usd * (budgetData.fxUsdPhp || 58) * 100) / 100;
+          const thumbId = arts.thumbnailId ?? arts.keyframes.at(-1)?.id;
+          return {
+            id: j.id,
+            title: j.title,
+            state: j.state,
+            progressPercent: calculateProgress(j.state),
+            costEstPhp: php,
+            thumbnailUrl: thumbId ? `/api/artifacts/${thumbId}` : undefined,
+            error: j.error ?? undefined,
+            createdAt: j.createdAt,
+            gates: j.gates,
+          };
+        });
         setJobs(mapped);
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [budgetData.fxUsdPhp]);
 
   const refreshBudget = useCallback(async () => {
     try {
@@ -166,42 +257,90 @@ export default function AppStudio() {
         const res = await fetch(`/api/employees/${r.id}/skill`);
         const json = await res.json();
         const emp = json.employee;
-        const skill = emp?.skills?.[0] ? JSON.parse(emp.skills[0].skillJson) : null;
+        const skillsArr = emp?.skills ?? [];
+        const activeSkillRow =
+          skillsArr.find((s: any) => s.version === emp?.activeVersion) ?? skillsArr[0];
+        const parsedSkill = activeSkillRow ? JSON.parse(activeSkillRow.skillJson) : null;
+        const history: SkillHistoryItem[] = skillsArr.map((s: any) => {
+          let p = "";
+          try {
+            p = JSON.parse(s.skillJson).prompt ?? "";
+          } catch {
+            p = "";
+          }
+          return {
+            version: s.version,
+            note: s.note,
+            createdAt: s.createdAt,
+            prompt: p,
+          };
+        });
+        const st: EmployeeStatsData | undefined = json.stats;
         list.push({
           id: r.id,
           name: r.name,
           title: r.title,
-          desk: `Desk ${r.id.slice(0, 2).toUpperCase()}`,
+          desk: `Desk ${r.id.slice(0, 3).toUpperCase()}`,
           status: "idle",
           activeVersion: emp?.activeVersion || 1,
-          provider: skill?.provider || "gemini",
-          model: skill?.model || "gemini-flash",
-          runsMonth: 8,
-          successRatePercent: 95,
-          avgCostEstPhp: 12,
-          rerollCap: 3,
-          prompt: skill?.prompt || "",
+          provider: parsedSkill?.provider || "gemini",
+          model: parsedSkill?.model || "gemini-flash",
+          runsMonth: st?.runsThisMonth ?? 0,
+          successRatePercent: st?.successRatePercent ?? 100,
+          avgDurationSec: st?.avgDurationSec ?? 0,
+          avgCostEstPhp: st?.avgCostEstPhp ?? 0,
+          monthSpendEstPhp: st?.monthSpendEstPhp ?? 0,
+          rerollCap: REROLL_CAPS[r.id] ?? 3,
+          prompt: parsedSkill?.prompt || "",
+          checklist: json.checklist ?? EMPLOYEE_CHECKLISTS[r.id] ?? [],
+          skillHistory: history,
         });
       } catch {
         list.push({
           id: r.id,
           name: r.name,
           title: r.title,
-          desk: "Desk A1",
+          desk: `Desk ${r.id.slice(0, 3).toUpperCase()}`,
           status: "idle",
           activeVersion: 1,
           provider: "gemini",
           model: "gemini-flash",
           runsMonth: 0,
           successRatePercent: 100,
+          avgDurationSec: 0,
           avgCostEstPhp: 0,
-          rerollCap: 3,
+          monthSpendEstPhp: 0,
+          rerollCap: REROLL_CAPS[r.id] ?? 3,
           prompt: "",
+          checklist: EMPLOYEE_CHECKLISTS[r.id] ?? [],
+          skillHistory: [],
         });
       }
     }
     setStaffData(list);
   }, []);
+
+  const activeJob = jobs.find((j) => !["DONE", "ERROR", "REJECTED"].includes(j.state)) || null;
+  const displayJob = activeJob ?? jobs[0] ?? null;
+  const activeRawJob = rawJobs.find((j) => j.id === (activeJob?.id ?? rawJobs[0]?.id)) || null;
+
+  // Fetch per-employee stats scoped to the current/selected job whenever selection or job changes
+  const refreshSelectedStats = useCallback(async () => {
+    try {
+      const q = activeRawJob?.id ? `?jobId=${encodeURIComponent(activeRawJob.id)}` : "";
+      const res = await fetch(`/api/employees/${selectedEmployee}/skill${q}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.stats) setSelectedStats(json.stats);
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeRawJob?.id, selectedEmployee]);
+
+  useEffect(() => {
+    refreshSelectedStats();
+  }, [refreshSelectedStats, activeJob?.state]);
 
   const triggerCourierMove = useCallback(
     (fromDesk: string, toDesk: string, label: string, jobTitle: string) => {
@@ -285,6 +424,7 @@ export default function AppStudio() {
               [role]: { status: "done", progress: 100, stage: ev.stage, message: ev.message },
             }));
             refreshJobs();
+            refreshBudget();
           } else if (ev.type === "courier:handoff" && ev.fromDesk && ev.toDesk) {
             triggerCourierMove(ev.fromDesk, ev.toDesk, ev.message, ev.jobTitle || "Active Reel");
           } else if (ev.type === "gate:waiting") {
@@ -321,6 +461,7 @@ export default function AppStudio() {
             });
             refreshJobs();
             refreshBudget();
+            refreshStaff();
           } else if (ev.type === "job:error") {
             setCourier(null);
             if (ev.employee) {
@@ -339,6 +480,7 @@ export default function AppStudio() {
             setCourier(null);
             refreshJobs();
             refreshBudget();
+            refreshStaff();
           }
           return;
         }
@@ -353,18 +495,12 @@ export default function AppStudio() {
     };
   }, [appendEvents, refreshBudget, refreshJobs, refreshSettings, refreshStaff, triggerCourierMove]);
 
-  const activeJob = jobs.find((j) => !["DONE", "ERROR"].includes(j.state)) || null;
-  const displayJob = activeJob ?? jobs[0] ?? null;
-  const activeRawJob = rawJobs.find((j) => j.id === (activeJob?.id ?? rawJobs[0]?.id)) || null;
-
-  // Derive employee status combining DB job state + live SSE stage activity (supports parallel Art + Voice!)
   const employees: EmployeeInfo[] = ROSTER.map((r) => {
     const live = employeeActivity[r.id];
     let status: EmployeeStatus = live?.status ?? "idle";
-    let progress = live?.progress;
-    let taskMessage = live?.message;
+    const progress = live?.progress;
+    const taskMessage = live?.message;
 
-    // Reconcile with activeJob state on initial load or gate pauses
     if (activeJob) {
       if (activeJob.state === "ERROR") {
         if (status === "working") status = "error";
@@ -431,18 +567,28 @@ export default function AppStudio() {
     },
   ];
 
-  const handleApproveGate = async (
+  const handleGateSubmit = async (
     jobId: string,
     gate: "SCRIPT_REVIEW" | "KEYFRAME_REVIEW",
-    decision: "approved" | "rejected",
-    comment?: string,
+    payload: GateReviewSubmission,
   ) => {
-    await fetch(`/api/jobs/${jobId}/approve`, {
+    const res = await fetch(`/api/jobs/${jobId}/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gate, decision, comment }),
+      body: JSON.stringify({ gate, ...payload }),
     });
-    refreshJobs();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Gate update failed" }));
+      throw new Error(err.error || "Gate update failed");
+    }
+    if (payload.decision === "approved") {
+      const gateRole: Role = gate === "KEYFRAME_REVIEW" ? "illustrator" : "scriptwriter";
+      setEmployeeActivity((prev) => ({
+        ...prev,
+        [gateRole]: { status: "done", progress: 100, stage: gate },
+      }));
+    }
+    await refreshJobs();
   };
 
   const handleRetryStage = async (jobId: string) => {
@@ -473,6 +619,7 @@ export default function AppStudio() {
       setCourier(null);
       await refreshJobs();
       await refreshBudget();
+      await refreshStaff();
     } finally {
       setIsResetting(false);
     }
@@ -484,15 +631,19 @@ export default function AppStudio() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, note }),
     });
-    refreshStaff();
+    await refreshStaff();
+  };
+
+  const handleRollbackSkill = async (role: Role, version: number) => {
+    await fetch(`/api/employees/${role}/skill`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rollbackToVersion: version }),
+    });
+    await refreshStaff();
   };
 
   const selectedStageRun = activeRawJob?.stageRuns?.find((sr) => sr.employeeId === selectedEmployee);
-  const selectedReelArtifact =
-    selectedEmployee === "editor"
-      ? activeRawJob?.artifacts?.find((a) => a.kind === "reel")
-      : undefined;
-
   let formattedOutput: string | undefined;
   if (selectedStageRun?.outputJson) {
     try {
@@ -502,10 +653,30 @@ export default function AppStudio() {
     }
   }
 
-  const employeeLogs = events
-    .filter((ev) => !ev.employee || ev.employee === selectedEmployee)
-    .slice(-20)
-    .reverse();
+  const parsedScript = parseStageJson<Script>(activeRawJob, "SCRIPTING");
+  const parsedSocial = parseStageJson<Social>(activeRawJob, "SOCIAL");
+  const activeArtifacts = buildJobArtifacts(activeRawJob);
+
+  const dbEmployeeLogs: PipelineEvent[] = (activeRawJob?.logs ?? [])
+    .filter((l) => !l.employeeId || l.employeeId === selectedEmployee)
+    .map((l) => ({
+      id: `joblog-${l.id}`,
+      timestamp: l.createdAt,
+      employee: l.employeeId ?? undefined,
+      level: (l.level as "info" | "warn" | "error") || "info",
+      message: l.message,
+    }));
+  const sseEmployeeLogs = events.filter((ev) => !ev.employee || ev.employee === selectedEmployee);
+  const mergedLogsMap = new Map<string, PipelineEvent>();
+  for (const item of [...dbEmployeeLogs, ...sseEmployeeLogs]) {
+    mergedLogsMap.set(item.id, item);
+  }
+  const employeeLogs = Array.from(mergedLogsMap.values()).slice(-25).reverse();
+
+  const selectedStaff = staffData.find((s) => s.id === selectedEmployee);
+  const modalRawJob = gateModal ? rawJobs.find((j) => j.id === gateModal.jobId) ?? null : null;
+  const modalArtifacts = buildJobArtifacts(modalRawJob);
+  const modalScript = parseStageJson<Script>(modalRawJob, "SCRIPTING");
 
   return (
     <div className="min-h-screen bg-surface text-on-surface">
@@ -514,7 +685,7 @@ export default function AppStudio() {
       <Header
         budgetMtdPhp={budgetData.mtdPhp}
         budgetCapPhp={budgetData.budgetCapPhp}
-        inFlightCount={jobs.filter((j) => !["DONE", "ERROR"].includes(j.state)).length}
+        inFlightCount={jobs.filter((j) => !["DONE", "ERROR", "REJECTED"].includes(j.state)).length}
         isPaused={isPaused}
         onTogglePause={() => setIsPaused(!isPaused)}
         activeStage={activeJob?.state}
@@ -531,7 +702,6 @@ export default function AppStudio() {
         isMockMode={settingsData.mockMode}
       />
 
-      {/* Main Content Area */}
       <main className="pl-60 pt-16 pb-14 px-4 overflow-y-auto">
         {activeTab === "office-floor" && (
           <OfficeFloorView
@@ -541,17 +711,24 @@ export default function AppStudio() {
             activeJob={displayJob}
             courier={courier}
             gates={gates}
-            onApproveGate={handleApproveGate}
+            onOpenGateModal={(jobId, gate) => setGateModal({ jobId, gate })}
+            onGateSubmit={handleGateSubmit}
+            onSaveSkill={handleSaveSkill}
+            onRollbackSkill={handleRollbackSkill}
             inspectorData={{
-              skillPrompt: staffData.find((s) => s.id === selectedEmployee)?.prompt,
-              provider: staffData.find((s) => s.id === selectedEmployee)?.provider,
-              model: staffData.find((s) => s.id === selectedEmployee)?.model,
-              activeVersion: staffData.find((s) => s.id === selectedEmployee)?.activeVersion,
+              skillPrompt: selectedStaff?.prompt,
+              provider: selectedStaff?.provider,
+              model: selectedStaff?.model,
+              activeVersion: selectedStaff?.activeVersion,
+              checklist: selectedStaff?.checklist,
+              skillHistory: selectedStaff?.skillHistory,
               latestOutput: formattedOutput,
-              reelArtifactId: selectedReelArtifact?.id,
+              parsedScript,
+              parsedSocial,
+              artifacts: activeArtifacts,
+              gateHistory: activeRawJob?.gates,
               logs: employeeLogs,
-              spendJobEst: 24,
-              spendMonthEst: 140,
+              stats: selectedStats,
             }}
           />
         )}
@@ -561,14 +738,21 @@ export default function AppStudio() {
             jobs={jobs}
             selectedJobId={selectedJobId}
             onSelectJob={(j) => setSelectedJobId(j.id)}
-            onApproveGate={handleApproveGate}
+            onApproveGate={(jobId, gate, decision, comment) =>
+              handleGateSubmit(jobId, gate, { decision, comment })
+            }
+            onOpenGateModal={(jobId, gate) => setGateModal({ jobId, gate })}
             onRetryStage={handleRetryStage}
             onOpenNewReelModal={() => setIsNewReelOpen(true)}
           />
         )}
 
         {activeTab === "staff-roster" && (
-          <StaffRosterView staff={staffData} onSaveSkill={handleSaveSkill} />
+          <StaffRosterView
+            staff={staffData}
+            onSaveSkill={handleSaveSkill}
+            onRollbackSkill={handleRollbackSkill}
+          />
         )}
 
         {activeTab === "budget-costs" && (
@@ -602,6 +786,20 @@ export default function AppStudio() {
         onClose={() => setIsNewReelOpen(false)}
         onSubmit={handleCreateReel}
       />
+
+      {gateModal && (
+        <GateReviewModal
+          isOpen
+          onClose={() => setGateModal(null)}
+          jobId={gateModal.jobId}
+          jobTitle={modalRawJob?.title ?? "Reel Review"}
+          gate={gateModal.gate}
+          script={modalScript}
+          keyframes={modalArtifacts.keyframes}
+          gateHistory={modalRawJob?.gates}
+          onSubmit={(payload) => handleGateSubmit(gateModal.jobId, gateModal.gate, payload)}
+        />
+      )}
     </div>
   );
 }
@@ -620,6 +818,7 @@ function calculateProgress(state: string): number {
     SOCIAL: 95,
     READY_TO_POST: 98,
     DONE: 100,
+    REJECTED: 0,
     ERROR: 0,
   };
   return steps[state] || 0;

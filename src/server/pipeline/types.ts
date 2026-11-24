@@ -18,6 +18,7 @@ export const JOB_STATES = [
   "SOCIAL",
   "READY_TO_POST",
   "DONE",
+  "REJECTED",
   "ERROR",
   "PAUSED_BUDGET",
 ] as const;
@@ -26,6 +27,7 @@ export type JobState = (typeof JOB_STATES)[number];
 
 export const GATES = ["SCRIPT_REVIEW", "KEYFRAME_REVIEW"] as const;
 export type GateName = (typeof GATES)[number];
+export type GateDecisionKind = "approved" | "request_changes" | "rejected";
 
 export interface RetryPolicy {
   maxRetries: number;

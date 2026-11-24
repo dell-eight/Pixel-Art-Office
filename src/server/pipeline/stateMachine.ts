@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ffPath, runFfmpeg } from "@/server/ffmpeg";
 import { providers } from "@/server/providers/registry";
@@ -18,7 +18,7 @@ import {
 } from "@/shared/schemas";
 import { generateValidated, sha256 } from "./llm";
 import type { Recorder } from "./recorder";
-import { getEmployeeSkill } from "./skills";
+import { getEmployeeSkill, type LoadedSkill } from "./skills";
 import { REROLL_CAPS, type JobState } from "./types";
 
 export interface PipelineOptions {
@@ -28,6 +28,8 @@ export interface PipelineOptions {
   sameJobCacheOnly?: boolean;
   /** Artificial minimum duration per stage (ms) so UI animations are observable in mock mode. */
   stageDelayMs?: number;
+  /** Optional skill loader override (for unit tests). */
+  loadSkill?: (role: Role) => Promise<LoadedSkill>;
 }
 
 export interface PipelineResult {
@@ -43,6 +45,15 @@ export interface PipelineResult {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Robust State Machine Pipeline Runner:
  * BRIEFED -> SCRIPTING -> SCRIPT_REVIEW (human gate)
@@ -50,7 +61,8 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * -> ANIMATING -> EDITING -> SOCIAL -> READY_TO_POST -> DONE
  *
  * Supports idempotent stage execution (input hash caching), retry with backoff,
- * human approval gates, reroll caps, courier handoffs, and visible stage timing in mock mode.
+ * human approval gates (Approve / Request changes / Reject + single-frame reroll),
+ * versioned employee skills, reroll caps, courier handoffs, and visible stage timing in mock mode.
  */
 export async function runStateMachinePipeline(
   brief: Brief,
@@ -62,6 +74,7 @@ export async function runStateMachinePipeline(
   const enableCache = options.enableCache ?? true;
   const sameJobCacheOnly = options.sameJobCacheOnly ?? true;
   const stageDelayMs = Math.max(0, options.stageDelayMs ?? 0);
+  const loadSkill = options.loadSkill ?? getEmployeeSkill;
 
   await mkdir(jobDir, { recursive: true });
   const dirs = {
@@ -111,14 +124,14 @@ export async function runStateMachinePipeline(
     input: unknown,
     action: () => Promise<T>,
     opts: { setState?: boolean } = {},
-  ): Promise<{ value: T; cached: boolean }> {
+  ): Promise<{ value: T; cached: boolean; inputHash: string }> {
     const inputHash = sha256({ stageName, input });
 
     if (enableCache && rec.findCachedRun) {
       const cached = await rec.findCachedRun(stageName, inputHash, { sameJobOnly: sameJobCacheOnly });
       if (cached && cached.outputJson) {
         await rec.log("info", employee, `Stage ${stageName} retrieved from idempotent cache (${inputHash.slice(0, 8)})`);
-        return { value: JSON.parse(cached.outputJson) as T, cached: true };
+        return { value: JSON.parse(cached.outputJson) as T, cached: true, inputHash };
       }
     }
 
@@ -140,7 +153,7 @@ export async function runStateMachinePipeline(
     try {
       const out = await runWithVisibleDuration(stageName, employee, action);
       await rec.stageEnd(runId, "done", out);
-      return { value: out, cached: false };
+      return { value: out, cached: false, inputHash };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await rec.stageEnd(runId, "error", undefined, msg);
@@ -159,35 +172,50 @@ export async function runStateMachinePipeline(
   const text = providers.text();
 
   // 1. BRIEFED -> Producer
-  const producerSkill = await getEmployeeSkill("producer");
-  const planRes = await executeStage<ProducerPlan>("BRIEFED", "producer", brief, async () => {
-    const res = await generateValidated(
-      text,
-      {
-        role: "producer",
-        system: producerSkill.prompt,
-        user: `Brief topic: ${brief.topic}\nAudience: ${brief.audience}\nPlatforms: ${brief.platforms.join(", ")}\nTone: ${brief.tone}`,
-        params: producerSkill.params,
-      },
-      ProducerPlanSchema,
-      { maxAttempts: 3, initialDelayMs: 200 },
-    );
-    return res.value;
-  });
+  const producerSkill = await loadSkill("producer");
+  const planRes = await executeStage<ProducerPlan>(
+    "BRIEFED",
+    "producer",
+    { brief, skillVersion: producerSkill.version },
+    async () => {
+      const res = await generateValidated(
+        text,
+        {
+          role: "producer",
+          system: producerSkill.prompt,
+          user: `Brief topic: ${brief.topic}\nAudience: ${brief.audience}\nPlatforms: ${brief.platforms.join(", ")}\nTone: ${brief.tone}`,
+          params: producerSkill.params,
+        },
+        ProducerPlanSchema,
+        { maxAttempts: 3, initialDelayMs: 200 },
+      );
+      return res.value;
+    },
+  );
   const plan = planRes.value;
   if (!planRes.cached) {
     await handoff("producer", "scriptwriter", "Brief ready → Scriptwriter");
   }
 
-  // 2. SCRIPTING -> Scriptwriter
-  const scriptSkill = await getEmployeeSkill("scriptwriter");
-  const scriptRes = await executeStage<Script>("SCRIPTING", "scriptwriter", plan, async () => {
+  // 2. SCRIPTING -> Scriptwriter (incorporating Gate 1 revision note if request_changes was submitted)
+  const scriptSkill = await loadSkill("scriptwriter");
+  const scriptRev = await rec.getLatestRevision?.("SCRIPT_REVIEW");
+  const scriptInput = {
+    plan,
+    skillVersion: scriptSkill.version,
+    revisionId: scriptRev?.id ?? null,
+    revisionNote: scriptRev?.comment ?? null,
+  };
+  const scriptRes = await executeStage<Script>("SCRIPTING", "scriptwriter", scriptInput, async () => {
+    const userPrompt = scriptRev?.comment
+      ? `${JSON.stringify(plan)}\n\nHuman reviewer requested changes:\n${scriptRev.comment}`
+      : JSON.stringify(plan);
     const res = await generateValidated(
       text,
       {
         role: "scriptwriter",
         system: scriptSkill.prompt,
-        user: JSON.stringify(plan),
+        user: userPrompt,
         params: scriptSkill.params,
       },
       ScriptSchema,
@@ -207,27 +235,46 @@ export async function runStateMachinePipeline(
     scriptDecision = { decision: "approved", comment: "Auto-approved script" };
   }
 
-  if (!scriptDecision || scriptDecision.decision === "waiting") {
+  if (scriptDecision?.decision === "rejected") {
+    const reason = `Script rejected at gate: ${scriptDecision.comment ?? "No feedback given"}`;
+    await rec.log("warn", "scriptwriter", reason);
+    await rec.setState("REJECTED", reason);
+    return { state: "REJECTED", error: reason };
+  }
+
+  if (!scriptDecision || scriptDecision.decision === "waiting" || scriptDecision.decision === "request_changes") {
     await rec.setState("SCRIPT_REVIEW");
+    await rec.gateWaiting?.(
+      "SCRIPT_REVIEW",
+      scriptDecision?.decision === "request_changes"
+        ? "Revised script ready for Gate 1 review"
+        : "Waiting for human approval at SCRIPT_REVIEW",
+    );
     await rec.log("info", "scriptwriter", "Pipeline paused at SCRIPT_REVIEW human gate");
     return { state: "SCRIPT_REVIEW", waitingGate: "SCRIPT_REVIEW" };
   }
 
-  if (scriptDecision.decision === "rejected") {
-    const reason = `Script rejected at gate: ${scriptDecision.comment ?? "No feedback given"}`;
-    await rec.log("warn", "scriptwriter", reason);
-    await rec.setState("ERROR", reason);
-    return { state: "ERROR", error: reason };
-  }
-
   await rec.log("info", null, `Gate SCRIPT_REVIEW passed: ${scriptDecision.comment ?? "Approved"}`);
 
-  // Check if ART_PLANNING already finished (resuming after Gate 2) so we don't replay Gate 1 handoff
+  // Gate 2 revision check (whole set vs single-frame)
+  const kfRev = await rec.getLatestRevision?.("KEYFRAME_REVIEW");
+  const artSkill = await loadSkill("artDirector");
+  const illSkill = await loadSkill("illustrator");
+  const voiceSkill = await loadSkill("voiceActor");
+
+  const isWholeSetKfRev = kfRev && kfRev.frameIndex === undefined;
+  const artInput = {
+    script,
+    skillVersion: artSkill.version,
+    revisionId: isWholeSetKfRev ? kfRev.id : null,
+    revisionNote: isWholeSetKfRev ? kfRev.comment : null,
+  };
+
   const artAlreadyCached =
     enableCache && rec.findCachedRun
-      ? Boolean(await rec.findCachedRun("ART_PLANNING", sha256({ stageName: "ART_PLANNING", input: script }), { sameJobOnly: sameJobCacheOnly }))
+      ? Boolean(await rec.findCachedRun("ART_PLANNING", sha256({ stageName: "ART_PLANNING", input: artInput }), { sameJobOnly: sameJobCacheOnly }))
       : false;
-  if (!artAlreadyCached) {
+  if (!artAlreadyCached && !kfRev) {
     await handoff("SCRIPT_REVIEW", "artDirector", "Gate 1 approved → Art & Voice");
   }
 
@@ -235,14 +282,16 @@ export async function runStateMachinePipeline(
   // Branch A: ART_PLANNING -> ILLUSTRATING
   // Branch B: VOICING
   const artBranchPromise = (async () => {
-    const artSkill = await getEmployeeSkill("artDirector");
-    const artRes = await executeStage<ArtPlan>("ART_PLANNING", "artDirector", script, async () => {
+    const artRes = await executeStage<ArtPlan>("ART_PLANNING", "artDirector", artInput, async () => {
+      const userPrompt = isWholeSetKfRev && kfRev?.comment
+        ? `${JSON.stringify(script)}\n\nHuman reviewer requested changes:\n${kfRev.comment}`
+        : JSON.stringify(script);
       const res = await generateValidated(
         text,
         {
           role: "artDirector",
           system: artSkill.prompt,
-          user: JSON.stringify(script),
+          user: userPrompt,
           params: artSkill.params,
         },
         ArtPlanSchema,
@@ -259,16 +308,83 @@ export async function runStateMachinePipeline(
     }
 
     const image = providers.image();
-    const kfRes = await executeStage<string[]>("ILLUSTRATING", "illustrator", art, async () => {
+    const illInput = {
+      art,
+      skillVersion: illSkill.version,
+      revisionId: kfRev?.id ?? null,
+      revisionNote: kfRev?.comment ?? null,
+      frameIndex: kfRev?.frameIndex ?? null,
+    };
+
+    const kfRes = await executeStage<string[]>("ILLUSTRATING", "illustrator", illInput, async () => {
       const size = { width: REEL.width, height: REEL.height };
-      const k0 = path.join(dirs.kf, "k00.png");
-      const first = await image.textToImage({ prompt: `${art.style}. ${art.k0Prompt}`, size, outPath: k0 });
+      const expectedPaths = [
+        path.join(dirs.kf, "k00.png"),
+        ...art.edits.map((_, i) => path.join(dirs.kf, `k${String(i + 1).padStart(2, "0")}.png`)),
+      ];
+      const targetFrame =
+        kfRev?.frameIndex !== undefined &&
+        kfRev.frameIndex >= 0 &&
+        kfRev.frameIndex < expectedPaths.length
+          ? kfRev.frameIndex
+          : undefined;
+
+      const allExist =
+        targetFrame !== undefined
+          ? (await Promise.all(expectedPaths.map(fileExists))).every(Boolean)
+          : false;
+
+      if (targetFrame !== undefined && allExist) {
+        const note = kfRev?.comment ? ` Revision note: ${kfRev.comment}` : "";
+        if (targetFrame === 0) {
+          await image.textToImage({
+            prompt: `${art.style}. ${art.k0Prompt}.${note}`,
+            size,
+            outPath: expectedPaths[0],
+          });
+          await rec.artifact("keyframe", expectedPaths[0], "image/png", {
+            index: 0,
+            revised: true,
+            revisionId: kfRev?.id,
+          });
+        } else {
+          const edit = art.edits[targetFrame - 1];
+          const r = await image.editImage({
+            inputPath: expectedPaths[targetFrame - 1],
+            instruction: `${edit.instruction}${note}`,
+            outPath: expectedPaths[targetFrame],
+          });
+          if (r.size.width !== size.width || r.size.height !== size.height) {
+            throw new Error(`Keyframe ${targetFrame} size mismatch: got ${r.size.width}x${r.size.height}`);
+          }
+          await rec.artifact("keyframe", expectedPaths[targetFrame], "image/png", {
+            index: targetFrame,
+            addObject: edit.addObject,
+            revised: true,
+            revisionId: kfRev?.id,
+          });
+        }
+        return expectedPaths;
+      }
+
+      // Full generation (first run or whole-set revision)
+      const note = kfRev?.comment ? ` Revision note: ${kfRev.comment}` : "";
+      const k0 = expectedPaths[0];
+      const first = await image.textToImage({
+        prompt: `${art.style}. ${art.k0Prompt}.${note}`,
+        size,
+        outPath: k0,
+      });
       await rec.artifact("keyframe", k0, "image/png", { index: 0 });
       const kfs = [first.path];
 
       for (const [i, edit] of art.edits.entries()) {
-        const kp = path.join(dirs.kf, `k${String(i + 1).padStart(2, "0")}.png`);
-        const r = await image.editImage({ inputPath: kfs[i], instruction: edit.instruction, outPath: kp });
+        const kp = expectedPaths[i + 1];
+        const r = await image.editImage({
+          inputPath: kfs[i],
+          instruction: `${edit.instruction}${note}`,
+          outPath: kp,
+        });
         if (r.size.width !== size.width || r.size.height !== size.height) {
           throw new Error(`Keyframe ${i + 1} size mismatch: got ${r.size.width}x${r.size.height}`);
         }
@@ -287,11 +403,11 @@ export async function runStateMachinePipeline(
 
   const voiceBranchPromise = (async () => {
     const tts = providers.tts();
-    // Keep setState: false so parallel VOICING does not race Art branch's job.state transitions in DB
+    // VOICING input does NOT depend on kfRev so Gate 2 rerolls preserve existing voice takes
     const voiceRes = await executeStage(
       "VOICING",
       "voiceActor",
-      script.beats.map((b) => b.narration),
+      { narrations: script.beats.map((b) => b.narration), skillVersion: voiceSkill.version },
       async () => {
         const takes: { path: string; durationSec: number; words: WordTimestamp[] }[] = [];
         for (const b of script.beats) {
@@ -318,24 +434,32 @@ export async function runStateMachinePipeline(
     kfDecision = { decision: "approved", comment: "Auto-approved keyframes" };
   }
 
-  if (!kfDecision || kfDecision.decision === "waiting") {
+  if (kfDecision?.decision === "rejected") {
+    const reason = `Keyframes rejected at gate: ${kfDecision.comment ?? "No comment"}`;
+    await rec.log("warn", "illustrator", reason);
+    await rec.setState("REJECTED", reason);
+    return { state: "REJECTED", error: reason };
+  }
+
+  if (!kfDecision || kfDecision.decision === "waiting" || kfDecision.decision === "request_changes") {
     await rec.setState("KEYFRAME_REVIEW");
+    await rec.gateWaiting?.(
+      "KEYFRAME_REVIEW",
+      kfDecision?.decision === "request_changes"
+        ? "Revised keyframes ready for Gate 2 review"
+        : "Waiting for human approval at KEYFRAME_REVIEW",
+    );
     await rec.log("info", "illustrator", "Pipeline paused at KEYFRAME_REVIEW human gate");
     return { state: "KEYFRAME_REVIEW", waitingGate: "KEYFRAME_REVIEW", keyframes };
   }
 
-  if (kfDecision.decision === "rejected") {
-    const reason = `Keyframes rejected at gate: ${kfDecision.comment ?? "No comment"}`;
-    await rec.log("warn", "illustrator", reason);
-    await rec.setState("ERROR", reason);
-    return { state: "ERROR", error: reason };
-  }
-
   await rec.log("info", null, `Gate KEYFRAME_REVIEW passed: ${kfDecision.comment ?? "Approved"}`);
 
+  const animSkill = await loadSkill("animator");
+  const animInput = { keyframes, skillVersion: animSkill.version };
   const animAlreadyCached =
     enableCache && rec.findCachedRun
-      ? Boolean(await rec.findCachedRun("ANIMATING", sha256({ stageName: "ANIMATING", input: keyframes }), { sameJobOnly: sameJobCacheOnly }))
+      ? Boolean(await rec.findCachedRun("ANIMATING", sha256({ stageName: "ANIMATING", input: animInput }), { sameJobOnly: sameJobCacheOnly }))
       : false;
   if (!animAlreadyCached) {
     await handoff("KEYFRAME_REVIEW", "animator", "Gate 2 approved → Animator");
@@ -343,7 +467,7 @@ export async function runStateMachinePipeline(
 
   // 5. ANIMATING -> Animator
   const video = providers.video();
-  const clipsRes = await executeStage<string[]>("ANIMATING", "animator", keyframes, async () => {
+  const clipsRes = await executeStage<string[]>("ANIMATING", "animator", animInput, async () => {
     const generatedClips: string[] = [];
     for (const b of script.beats) {
       const cp = path.join(dirs.clips, `beat${b.index}.mp4`);
@@ -366,44 +490,50 @@ export async function runStateMachinePipeline(
   }
 
   // 6. EDITING -> Editor
+  const editorSkill = await loadSkill("editor");
   const durationSec = script.beats.reduce((a, b) => a + b.seconds, 0);
   const reelPath = path.join(dirs.out, "reel.mp4");
   const thumbnailPath = path.join(dirs.out, "thumbnail.png");
 
-  const editRes = await executeStage("EDITING", "editor", { clips, voice: voiceTakes.map((v) => v.path) }, async () => {
-    const listFile = path.join(dirs.clips, "concat.txt");
-    await writeFile(listFile, clips.map((c) => `file '${ffPath(c)}'`).join("\n"));
-    const audioIn = voiceTakes.flatMap((v) => ["-i", v.path]);
-    const pads = script.beats
-      .map((b, i) => `[${i + 1}:a]aresample=48000,apad=whole_dur=${b.seconds},atrim=0:${b.seconds}[a${i}]`)
-      .join(";");
-    const concatA = script.beats.map((_, i) => `[a${i}]`).join("") + `concat=n=${script.beats.length}:v=0:a=1[voice]`;
+  const editRes = await executeStage(
+    "EDITING",
+    "editor",
+    { clips, voice: voiceTakes.map((v) => v.path), skillVersion: editorSkill.version },
+    async () => {
+      const listFile = path.join(dirs.clips, "concat.txt");
+      await writeFile(listFile, clips.map((c) => `file '${ffPath(c)}'`).join("\n"));
+      const audioIn = voiceTakes.flatMap((v) => ["-i", v.path]);
+      const pads = script.beats
+        .map((b, i) => `[${i + 1}:a]aresample=48000,apad=whole_dur=${b.seconds},atrim=0:${b.seconds}[a${i}]`)
+        .join(";");
+      const concatA = script.beats.map((_, i) => `[a${i}]`).join("") + `concat=n=${script.beats.length}:v=0:a=1[voice]`;
 
-    await runFfmpeg([
-      "-f", "concat", "-safe", "0", "-i", listFile,
-      ...audioIn,
-      "-filter_complex",
-      `[0:v]scale=${REEL.width}:${REEL.height}:flags=neighbor,fps=${REEL.fps},format=yuv420p[v];${pads};${concatA};[voice]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[a]`,
-      "-map", "[v]", "-map", "[a]",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "160k",
-      "-movflags", "+faststart", "-t", String(durationSec),
-      reelPath,
-    ]);
-    await runFfmpeg(["-i", keyframes.at(-1)!, "-vf", "scale=540:960", "-frames:v", "1", thumbnailPath]);
-    await rec.artifact("reel", reelPath, "video/mp4", { durationSec, width: REEL.width, height: REEL.height, fps: REEL.fps });
-    await rec.artifact("thumbnail", thumbnailPath, "image/png");
-    return { reelPath, thumbnailPath, durationSec };
-  });
+      await runFfmpeg([
+        "-f", "concat", "-safe", "0", "-i", listFile,
+        ...audioIn,
+        "-filter_complex",
+        `[0:v]scale=${REEL.width}:${REEL.height}:flags=neighbor,fps=${REEL.fps},format=yuv420p[v];${pads};${concatA};[voice]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[a]`,
+        "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "160k",
+        "-movflags", "+faststart", "-t", String(durationSec),
+        reelPath,
+      ]);
+      await runFfmpeg(["-i", keyframes.at(-1)!, "-vf", "scale=540:960", "-frames:v", "1", thumbnailPath]);
+      await rec.artifact("reel", reelPath, "video/mp4", { durationSec, width: REEL.width, height: REEL.height, fps: REEL.fps });
+      await rec.artifact("thumbnail", thumbnailPath, "image/png");
+      return { reelPath, thumbnailPath, durationSec };
+    },
+  );
   if (!editRes.cached) {
     await handoff("editor", "socialManager", "Master reel assembled → Social Manager");
   }
 
   // 7. SOCIAL -> Social Manager
-  const socialSkill = await getEmployeeSkill("socialManager");
+  const socialSkill = await loadSkill("socialManager");
   const socialRes = await executeStage<Social>(
     "SOCIAL",
     "socialManager",
-    { script: script.title, platforms: brief.platforms },
+    { script: script.title, platforms: brief.platforms, skillVersion: socialSkill.version },
     async () => {
       const res = await generateValidated(
         text,

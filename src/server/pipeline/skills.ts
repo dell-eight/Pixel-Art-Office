@@ -1,4 +1,5 @@
 import { prisma } from "@/server/db";
+import { EMPLOYEE_CHECKLISTS } from "@/shared/checklists";
 import type { Role } from "@/shared/roster";
 
 export interface LoadedSkill {
@@ -7,27 +8,30 @@ export interface LoadedSkill {
   model: string;
   params: Record<string, unknown>;
   outputSchema?: string;
+  checklist: readonly string[];
   version: number;
 }
 
 /**
  * Loads the active versioned skill prompt and config for an employee from the database,
- * falling back to an in-memory fallback if the database has not seeded or is unavailable.
+ * resolving employee.activeVersion (falling back to latest if missing) so rollbacks apply
+ * on the very next pipeline run.
  */
 export async function getEmployeeSkill(role: Role): Promise<LoadedSkill> {
+  const checklist = EMPLOYEE_CHECKLISTS[role] ?? [];
   try {
     const employee = await prisma.employee.findUnique({
       where: { id: role },
       include: {
         skills: {
           orderBy: { version: "desc" },
-          take: 1,
         },
       },
     });
 
     if (employee && employee.skills.length > 0) {
-      const active = employee.skills[0];
+      const active =
+        employee.skills.find((s) => s.version === employee.activeVersion) ?? employee.skills[0];
       const parsed = JSON.parse(active.skillJson);
       return {
         prompt: parsed.prompt,
@@ -35,6 +39,7 @@ export async function getEmployeeSkill(role: Role): Promise<LoadedSkill> {
         model: parsed.model,
         params: parsed.params ?? {},
         outputSchema: parsed.outputSchema,
+        checklist,
         version: active.version,
       };
     }
@@ -47,6 +52,7 @@ export async function getEmployeeSkill(role: Role): Promise<LoadedSkill> {
     provider: "gemini",
     model: "gemini-flash",
     params: { temperature: 0.7 },
+    checklist,
     version: 1,
   };
 }

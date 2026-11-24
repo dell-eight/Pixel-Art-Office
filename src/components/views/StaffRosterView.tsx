@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { DiodeChip } from "@/components/ui/DiodeChip";
 import { MechanicalButton } from "@/components/ui/MechanicalButton";
 import type { Role } from "@/shared/roster";
+import type { SkillHistoryItem } from "./OfficeFloorView";
 
 export interface StaffMember {
   id: Role;
@@ -16,17 +17,22 @@ export interface StaffMember {
   model: string;
   runsMonth: number;
   successRatePercent: number;
+  avgDurationSec: number;
   avgCostEstPhp: number;
+  monthSpendEstPhp: number;
   rerollCap: number;
   prompt: string;
+  checklist: readonly string[];
+  skillHistory: SkillHistoryItem[];
 }
 
 export interface StaffRosterViewProps {
   staff: StaffMember[];
   onSaveSkill: (role: Role, prompt: string, note?: string) => Promise<void>;
+  onRollbackSkill: (role: Role, version: number) => Promise<void>;
 }
 
-export function StaffRosterView({ staff, onSaveSkill }: StaffRosterViewProps) {
+export function StaffRosterView({ staff, onSaveSkill, onRollbackSkill }: StaffRosterViewProps) {
   const [selectedRole, setSelectedRole] = useState<Role>(staff[0]?.id || "producer");
   const [filter, setFilter] = useState<"all" | "text" | "visual" | "audio">("all");
   const [editedPrompt, setEditedPrompt] = useState("");
@@ -39,7 +45,7 @@ export function StaffRosterView({ staff, onSaveSkill }: StaffRosterViewProps) {
     if (selectedStaff) {
       setEditedPrompt(selectedStaff.prompt);
     }
-  }, [selectedRole, selectedStaff]);
+  }, [selectedRole, selectedStaff?.prompt, selectedStaff?.activeVersion]);
 
   const filteredStaff = staff.filter((s) => {
     if (filter === "text") return ["producer", "scriptwriter", "artDirector", "socialManager"].includes(s.id);
@@ -52,7 +58,7 @@ export function StaffRosterView({ staff, onSaveSkill }: StaffRosterViewProps) {
     if (!selectedStaff || isSaving) return;
     setIsSaving(true);
     try {
-      await onSaveSkill(selectedStaff.id, editedPrompt, versionNote);
+      await onSaveSkill(selectedStaff.id, editedPrompt, versionNote.trim() || undefined);
       setVersionNote("");
     } finally {
       setIsSaving(false);
@@ -63,7 +69,6 @@ export function StaffRosterView({ staff, onSaveSkill }: StaffRosterViewProps) {
     <div className="flex h-[calc(100vh-6.5rem)] gap-4 overflow-hidden">
       {/* Staff Grid */}
       <div className="flex-1 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden">
-        {/* Top Header Strip */}
         <div className="flex items-center justify-between px-4 py-2 bg-surface-container border-b border-[#272a3b]">
           <div className="flex items-center gap-3">
             <span className="font-headline font-bold text-headline-sm uppercase text-on-surface">
@@ -87,7 +92,6 @@ export function StaffRosterView({ staff, onSaveSkill }: StaffRosterViewProps) {
           </div>
         </div>
 
-        {/* Staff 2-Column Grid */}
         <div className="flex-1 p-4 grid grid-cols-1 md:grid-cols-2 gap-3 overflow-y-auto">
           {filteredStaff.map((emp) => {
             const isSelected = selectedRole === emp.id;
@@ -129,6 +133,9 @@ export function StaffRosterView({ staff, onSaveSkill }: StaffRosterViewProps) {
                     <span className="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#272a3b] font-mono text-label-xs text-outline">
                       Cap: {emp.rerollCap} rolls
                     </span>
+                    <span className="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#272a3b] font-mono text-label-xs text-secondary">
+                      Avg {emp.avgDurationSec}s
+                    </span>
                   </div>
                 </div>
 
@@ -154,23 +161,37 @@ export function StaffRosterView({ staff, onSaveSkill }: StaffRosterViewProps) {
 
       {/* Right Employee Skill Editor Inspector */}
       {selectedStaff && (
-        <div className="w-84 xl:w-96 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden shrink-0">
+        <div className="w-84 xl:w-[26rem] flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden shrink-0">
           <div className="p-3 bg-surface-container border-b border-[#272a3b]">
             <div className="font-mono text-label-xs text-outline uppercase">SKILL EDITOR</div>
             <div className="font-headline font-bold text-headline-sm text-on-surface">
               {selectedStaff.name} ({selectedStaff.title})
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 mt-2 font-mono text-[10px] text-center">
+              <div className="p-1 bg-surface-container-lowest rounded border border-[#272a3b]">
+                <span className="text-outline block">SUCCESS</span>
+                <span className="text-secondary font-bold">{selectedStaff.successRatePercent}%</span>
+              </div>
+              <div className="p-1 bg-surface-container-lowest rounded border border-[#272a3b]">
+                <span className="text-outline block">AVG DUR</span>
+                <span className="text-primary font-bold">{selectedStaff.avgDurationSec}s</span>
+              </div>
+              <div className="p-1 bg-surface-container-lowest rounded border border-[#272a3b]">
+                <span className="text-outline block">MO SPEND</span>
+                <span className="text-on-surface font-bold">₱{selectedStaff.monthSpendEstPhp} est.</span>
+              </div>
             </div>
           </div>
 
           <div className="flex-1 p-3 overflow-y-auto space-y-3 font-mono">
             <div className="space-y-1">
               <label className="text-label-xs text-outline uppercase block">
-                SYSTEM PROMPT (VERSION {selectedStaff.activeVersion})
+                SYSTEM PROMPT (ACTIVE v{selectedStaff.activeVersion})
               </label>
               <textarea
                 value={editedPrompt}
                 onChange={(e) => setEditedPrompt(e.target.value)}
-                rows={12}
+                rows={9}
                 className="w-full p-2.5 bg-surface-container-lowest border border-[#272a3b] rounded text-body-xs text-on-surface font-mono leading-relaxed focus:outline-none focus:border-primary"
               />
             </div>
@@ -195,6 +216,55 @@ export function StaffRosterView({ staff, onSaveSkill }: StaffRosterViewProps) {
             >
               {isSaving ? "SAVING..." : "SAVE AS NEW VERSION"}
             </MechanicalButton>
+
+            {selectedStaff.checklist.length > 0 && (
+              <div className="pt-2 border-t border-[#272a3b] space-y-1">
+                <div className="text-label-xs text-outline uppercase">Quality Checklist</div>
+                <ul className="space-y-1 text-[11px] text-on-surface-variant">
+                  {selectedStaff.checklist.map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-1.5">
+                      <span className="text-secondary">✓</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {selectedStaff.skillHistory.length > 0 && (
+              <div className="pt-2 border-t border-[#272a3b] space-y-1.5">
+                <div className="text-label-xs text-outline uppercase">Version History</div>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {selectedStaff.skillHistory.map((h) => {
+                    const isActive = h.version === selectedStaff.activeVersion;
+                    return (
+                      <div
+                        key={h.version}
+                        className="p-2 bg-surface-container-lowest border border-[#272a3b] rounded flex items-center justify-between gap-2 text-[11px]"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-bold text-on-surface">
+                            v{h.version} {isActive && <span className="text-secondary">(ACTIVE)</span>}
+                          </div>
+                          <div className="text-[10px] text-outline truncate">
+                            {h.note || new Date(h.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                        {!isActive && (
+                          <button
+                            type="button"
+                            onClick={() => onRollbackSkill(selectedStaff.id, h.version)}
+                            className="px-2 py-0.5 bg-surface-container border border-[#272a3b] rounded text-[10px] text-primary hover:border-primary shrink-0"
+                          >
+                            ROLLBACK
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

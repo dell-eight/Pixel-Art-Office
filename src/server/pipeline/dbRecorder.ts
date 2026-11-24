@@ -1,9 +1,26 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Role } from "@/shared/roster";
 import { emitStudioEvent } from "./events";
-import type { CachedStageRun, Recorder } from "./recorder";
+import {
+  parseFramePrefix,
+  type CachedStageRun,
+  type GateDecisionRecord,
+  type Recorder,
+  type RevisionRequest,
+} from "./recorder";
 
-/** Persists job state, stage runs, artifacts and logs to SQL Server via Prisma, and emits SSE studio events. */
+const STAGE_ESTIMATES: Record<Role, { provider: string; model: string; units: number; estUsd: number }> = {
+  producer: { provider: "mock", model: "mock-v1", units: 450, estUsd: 0.0005 },
+  scriptwriter: { provider: "mock", model: "mock-v1", units: 700, estUsd: 0.0008 },
+  artDirector: { provider: "mock", model: "mock-v1", units: 600, estUsd: 0.0007 },
+  illustrator: { provider: "mock", model: "mock-v1", units: 5, estUsd: 0.04 },
+  animator: { provider: "mock", model: "mock-v1", units: 24, estUsd: 0.15 },
+  voiceActor: { provider: "mock", model: "mock-v1", units: 420, estUsd: 0.02 },
+  editor: { provider: "ffmpeg", model: "local", units: 1, estUsd: 0 },
+  socialManager: { provider: "mock", model: "mock-v1", units: 380, estUsd: 0.0004 },
+};
+
+/** Persists job state, stage runs, artifacts, ledger cost estimates and logs to SQL Server via Prisma, and emits SSE studio events. */
 export class DbRecorder implements Recorder {
   private runMeta = new Map<string, { stage: string; employee: Role }>();
 
@@ -17,12 +34,18 @@ export class DbRecorder implements Recorder {
 
   async setState(state: string, error?: string) {
     await this.db.job.update({ where: { id: this.jobId }, data: { state, error: error ?? null } });
+    const evtType =
+      state === "DONE"
+        ? "job:done"
+        : state === "ERROR" || state === "REJECTED"
+          ? "job:error"
+          : "job:state";
     emitStudioEvent({
-      type: state === "DONE" ? "job:done" : state === "ERROR" ? "job:error" : "job:state",
+      type: evtType,
       jobId: this.jobId,
       jobTitle: this.jobTitle,
       stage: state,
-      level: state === "ERROR" ? "error" : "info",
+      level: state === "ERROR" || state === "REJECTED" ? "error" : "info",
       message: error ? `${state}: ${error}` : `Job moved to ${state}`,
     });
     if (this.echo) console.log(`  [state] ${state}${error ? ` - ${error}` : ""}`);
@@ -75,6 +98,27 @@ export class DbRecorder implements Recorder {
     });
     const stage = meta?.stage ?? "STAGE";
     const employee = meta?.employee ?? null;
+
+    if (status === "done" && employee) {
+      const est = STAGE_ESTIMATES[employee];
+      try {
+        await this.db.ledgerEntry.create({
+          data: {
+            jobId: this.jobId,
+            stageRunId: runId,
+            provider: est.provider,
+            model: est.model,
+            units: est.units,
+            estUsd: est.estUsd,
+            actualUsd: est.estUsd,
+            status: "committed",
+          },
+        });
+      } catch {
+        // ignore ledger error if offline
+      }
+    }
+
     const message = status === "done" ? `Finished ${stage}` : `Failed ${stage}: ${error ?? "unknown error"}`;
     await this.db.logEntry.create({
       data: {
@@ -112,6 +156,17 @@ export class DbRecorder implements Recorder {
     });
   }
 
+  async gateWaiting(gate: "SCRIPT_REVIEW" | "KEYFRAME_REVIEW", message?: string) {
+    emitStudioEvent({
+      type: "gate:waiting",
+      jobId: this.jobId,
+      jobTitle: this.jobTitle,
+      gate,
+      stage: gate,
+      message: message ?? `Waiting for human approval at ${gate}`,
+    });
+  }
+
   async artifact(kind: string, filePath: string, mime: string, meta?: unknown) {
     await this.db.artifact.create({
       data: { jobId: this.jobId, kind, path: filePath, mime, metaJson: meta === undefined ? null : JSON.stringify(meta) },
@@ -140,25 +195,28 @@ export class DbRecorder implements Recorder {
         inputHash,
         status: "done",
       },
-      orderBy: { finishedAt: "desc" },
+      orderBy: [{ finishedAt: "desc" }, { startedAt: "desc" }],
     });
     if (!run) return null;
     return { status: run.status, outputJson: run.outputJson };
   }
 
-  async getGateDecision(gate: "SCRIPT_REVIEW" | "KEYFRAME_REVIEW") {
+  async getGateDecision(gate: "SCRIPT_REVIEW" | "KEYFRAME_REVIEW"): Promise<GateDecisionRecord> {
     const dec = await this.db.gateDecision.findFirst({
       where: { jobId: this.jobId, gate },
       orderBy: { createdAt: "desc" },
     });
     if (dec) {
+      const { frameIndex, cleanComment } = parseFramePrefix(dec.comment);
       return {
-        decision: dec.decision as "approved" | "rejected",
-        comment: dec.comment ?? undefined,
+        id: dec.id,
+        decision: dec.decision as GateDecisionRecord["decision"],
+        comment: cleanComment || undefined,
+        frameIndex,
       };
     }
     if (this.autoApproveGates) {
-      await this.db.gateDecision.create({
+      const created = await this.db.gateDecision.create({
         data: {
           jobId: this.jobId,
           gate,
@@ -166,16 +224,22 @@ export class DbRecorder implements Recorder {
           comment: "auto-approved in mock/demo mode",
         },
       });
-      return { decision: "approved" as const, comment: "auto-approved in mock/demo mode" };
+      return { id: created.id, decision: "approved", comment: "auto-approved in mock/demo mode" };
     }
-    emitStudioEvent({
-      type: "gate:waiting",
-      jobId: this.jobId,
-      jobTitle: this.jobTitle,
-      gate,
-      stage: gate,
-      message: `Waiting for human approval at ${gate}`,
+    return { decision: "waiting" };
+  }
+
+  async getLatestRevision(gate: "SCRIPT_REVIEW" | "KEYFRAME_REVIEW"): Promise<RevisionRequest | null> {
+    const rev = await this.db.gateDecision.findFirst({
+      where: { jobId: this.jobId, gate, decision: "request_changes" },
+      orderBy: { createdAt: "desc" },
     });
-    return { decision: "waiting" as const };
+    if (!rev) return null;
+    const { frameIndex, cleanComment } = parseFramePrefix(rev.comment);
+    return {
+      id: rev.id,
+      comment: cleanComment,
+      frameIndex,
+    };
   }
 }
