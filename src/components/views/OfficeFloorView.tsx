@@ -308,14 +308,14 @@ export function OfficeFloorView({
 
     if (role === "illustrator" && arts && arts.keyframes.length > 0) {
       return (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid min-w-0 grid-cols-2 gap-2">
           {arts.keyframes.map((kf) => (
-            <div key={kf.id} className="p-1.5 bg-surface-container-lowest border border-[#272a3b] rounded">
-              <div className="aspect-[9/16] bg-black rounded overflow-hidden mb-1">
+            <div key={kf.id} className="min-w-0 overflow-hidden p-1.5 bg-surface-container-lowest border border-[#272a3b] rounded">
+              <div className="h-36 w-full bg-black rounded overflow-hidden mb-1 flex items-center justify-center">
                 <img
                   src={`/api/artifacts/${kf.id}`}
                   alt={`Keyframe K${kf.index}`}
-                  className="w-full h-full object-cover pixelated"
+                  className="max-w-full max-h-full w-auto h-full object-contain pixelated block"
                 />
               </div>
               <div className="text-[10px] text-primary font-bold">
@@ -412,7 +412,7 @@ export function OfficeFloorView({
   return (
     <div className="flex w-full h-[calc(100vh-6.5rem)] gap-4 overflow-hidden">
       {/* Floor Area */}
-      <div className="flex-1 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl relative overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl relative overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-surface-container border-b border-[#272a3b] text-on-surface">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[18px]">domain</span>
@@ -494,7 +494,7 @@ export function OfficeFloorView({
               <div
                 key={g.name}
                 onClick={() => g.isWaiting && g.jobId && onOpenGateModal(g.jobId, g.name)}
-                className={`relative flex items-center gap-3 px-3.5 py-2 rounded border transition-all ${
+                className={`relative flex flex-wrap items-center gap-2.5 px-3.5 py-2 rounded border transition-all ${
                   g.isWaiting
                     ? "bg-primary-container/20 border-primary shadow-[0_0_14px_rgba(245,158,11,0.35)] cursor-pointer"
                     : "bg-surface-container border-[#272a3b]"
@@ -522,18 +522,24 @@ export function OfficeFloorView({
                   </div>
                 </div>
                 {g.isWaiting && g.jobId && (
-                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5">
                     <MechanicalButton
                       size="sm"
                       variant="primary"
-                      onClick={() => onGateSubmit(g.jobId!, g.name, { decision: "approved" })}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onGateSubmit(g.jobId!, g.name, { decision: "approved" });
+                      }}
                     >
                       APPROVE
                     </MechanicalButton>
                     <MechanicalButton
                       size="sm"
                       variant="secondary"
-                      onClick={() => onOpenGateModal(g.jobId!, g.name)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenGateModal(g.jobId!, g.name);
+                      }}
                     >
                       REVIEW
                     </MechanicalButton>
@@ -570,7 +576,7 @@ export function OfficeFloorView({
       </div>
 
       {/* Docked Right Inspector */}
-      <div className="w-84 xl:w-[26rem] flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden shrink-0">
+      <div className="w-80 lg:w-[22rem] xl:w-[25rem] min-w-0 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden shrink-0">
         <div className="p-3 bg-surface-container border-b border-[#272a3b]">
           <div className="flex items-center justify-between mb-2">
             <span className="font-mono text-label-xs text-outline uppercase">EMPLOYEE INSPECTOR</span>
@@ -631,7 +637,7 @@ export function OfficeFloorView({
           ))}
         </div>
 
-        <div className="flex-1 p-3 overflow-y-auto font-mono text-body-sm space-y-3">
+        <div className="flex-1 min-w-0 p-3 overflow-y-auto overflow-x-hidden font-mono text-body-sm space-y-3">
           {/* Embedded Gate Review Panel when paused at Gate 1 or Gate 2 */}
           {waitingGate && waitingGate.jobId && (
             <div className="p-2.5 bg-surface-container border border-primary/40 rounded">

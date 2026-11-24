@@ -674,7 +674,9 @@ export default function AppStudio() {
   const employeeLogs = Array.from(mergedLogsMap.values()).slice(-25).reverse();
 
   const selectedStaff = staffData.find((s) => s.id === selectedEmployee);
-  const modalRawJob = gateModal ? rawJobs.find((j) => j.id === gateModal.jobId) ?? null : null;
+  const modalRawJob = gateModal
+    ? rawJobs.find((j) => j.id === gateModal.jobId) ?? (activeRawJob?.id === gateModal.jobId ? activeRawJob : null)
+    : null;
   const modalArtifacts = buildJobArtifacts(modalRawJob);
   const modalScript = parseStageJson<Script>(modalRawJob, "SCRIPTING");
 

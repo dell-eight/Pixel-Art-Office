@@ -68,7 +68,7 @@ export function StaffRosterView({ staff, onSaveSkill, onRollbackSkill }: StaffRo
   return (
     <div className="flex h-[calc(100vh-6.5rem)] gap-4 overflow-hidden">
       {/* Staff Grid */}
-      <div className="flex-1 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 bg-surface-container border-b border-[#272a3b]">
           <div className="flex items-center gap-3">
             <span className="font-headline font-bold text-headline-sm uppercase text-on-surface">
@@ -161,7 +161,7 @@ export function StaffRosterView({ staff, onSaveSkill, onRollbackSkill }: StaffRo
 
       {/* Right Employee Skill Editor Inspector */}
       {selectedStaff && (
-        <div className="w-84 xl:w-[26rem] flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden shrink-0">
+        <div className="w-80 lg:w-[22rem] xl:w-[25rem] min-w-0 flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-xl overflow-hidden shrink-0">
           <div className="p-3 bg-surface-container border-b border-[#272a3b]">
             <div className="font-mono text-label-xs text-outline uppercase">SKILL EDITOR</div>
             <div className="font-headline font-bold text-headline-sm text-on-surface">
@@ -183,7 +183,7 @@ export function StaffRosterView({ staff, onSaveSkill, onRollbackSkill }: StaffRo
             </div>
           </div>
 
-          <div className="flex-1 p-3 overflow-y-auto space-y-3 font-mono">
+          <div className="flex-1 min-w-0 p-3 overflow-y-auto overflow-x-hidden space-y-3 font-mono">
             <div className="space-y-1">
               <label className="text-label-xs text-outline uppercase block">
                 SYSTEM PROMPT (ACTIVE v{selectedStaff.activeVersion})

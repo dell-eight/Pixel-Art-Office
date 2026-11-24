@@ -71,6 +71,15 @@ export function PipelineKanbanView({
     return true;
   });
 
+  const visibleColumns = columns.filter((col) => {
+    if (filter === "approval") return col.state === "SCRIPT_REVIEW" || col.state === "KEYFRAME_REVIEW";
+    if (filter === "errors") return col.state === "ERROR";
+    if (filter === "rejected") return col.state === "REJECTED";
+    if (filter === "progress") return !["DONE", "ERROR", "REJECTED", "READY_TO_POST"].includes(col.state);
+    if (filter === "posted") return col.state === "DONE";
+    return true;
+  });
+
   const selectedJob = jobs.find((j) => j.id === selectedJobId) ?? null;
 
   return (
@@ -115,7 +124,7 @@ export function PipelineKanbanView({
 
       {/* Kanban Board Horizontal Scroll */}
       <div className="flex-1 flex gap-3 overflow-x-auto pb-2">
-        {columns.map((col) => {
+        {visibleColumns.map((col) => {
           const colJobs = filteredJobs.filter((j) => j.state === col.state);
           const isGateCol = Boolean(col.gate);
 

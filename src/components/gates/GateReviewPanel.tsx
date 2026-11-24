@@ -114,7 +114,7 @@ export function GateReviewPanel({
   };
 
   return (
-    <div className="space-y-3 font-mono text-body-sm">
+    <div className="space-y-3 min-w-0 font-mono text-body-sm">
       {/* Header Banner */}
       <div className="p-2.5 bg-primary-container/10 border border-primary/40 rounded">
         <div className="flex items-center justify-between gap-2">
@@ -222,7 +222,7 @@ export function GateReviewPanel({
           </div>
 
           {keyframes.length > 0 ? (
-            <div className={`grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-3 sm:grid-cols-5"}`}>
+            <div className={`grid min-w-0 gap-2 ${compact ? "grid-cols-2" : "grid-cols-3 sm:grid-cols-5"}`}>
               {keyframes.map((kf) => {
                 const isPicked = selectedFrame === kf.index;
                 return (
@@ -230,17 +230,19 @@ export function GateReviewPanel({
                     type="button"
                     key={kf.id}
                     onClick={() => setSelectedFrame(isPicked ? undefined : kf.index)}
-                    className={`text-left p-1.5 rounded border transition-all ${
+                    className={`min-w-0 overflow-hidden text-left p-1.5 rounded border transition-all ${
                       isPicked
                         ? "border-primary bg-primary-container/20 ring-1 ring-primary"
                         : "border-[#272a3b] bg-surface-container-lowest hover:border-outline"
                     }`}
                   >
-                    <div className="aspect-[9/16] w-full bg-black rounded overflow-hidden mb-1">
+                    <div
+                      className={`${compact ? "h-36" : "h-44"} w-full bg-black rounded overflow-hidden mb-1 flex items-center justify-center`}
+                    >
                       <img
                         src={`/api/artifacts/${kf.id}`}
                         alt={`Keyframe K${kf.index}`}
-                        className="w-full h-full object-cover pixelated"
+                        className="max-w-full max-h-full w-auto h-full object-contain pixelated block"
                       />
                     </div>
                     <div className="flex items-center justify-between text-[10px]">
@@ -362,7 +364,7 @@ export function GateReviewModal({ isOpen, onClose, ...panelProps }: GateReviewMo
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
       <div className="w-full max-w-2xl max-h-[90vh] flex flex-col bg-surface-container-low border border-[#272a3b] rounded-lg shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 bg-surface-container border-b border-[#272a3b]">
           <div className="flex items-center gap-2">

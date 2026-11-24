@@ -13,6 +13,7 @@ export function MechanicalButton({
   icon,
   className = "",
   disabled,
+  type = "button",
   ...props
 }: MechanicalButtonProps) {
   const base =
@@ -36,7 +37,12 @@ export function MechanicalButton({
   }[variant];
 
   return (
-    <button className={`${base} ${sizeClasses} ${variantClasses} ${className}`} disabled={disabled} {...props}>
+    <button
+      type={type}
+      className={`${base} ${sizeClasses} ${variantClasses} ${className}`}
+      disabled={disabled}
+      {...props}
+    >
       {icon && <span className="material-symbols-outlined text-[16px]">{icon}</span>}
       {children}
     </button>
