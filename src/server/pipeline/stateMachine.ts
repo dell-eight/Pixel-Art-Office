@@ -24,6 +24,10 @@ import { REROLL_CAPS, type JobState } from "./types";
 export interface PipelineOptions {
   autoApproveGates?: boolean;
   enableCache?: boolean;
+  /** When true, only reuse cached stage runs belonging to the same job (e.g. when resuming after a gate). */
+  sameJobCacheOnly?: boolean;
+  /** Artificial minimum duration per stage (ms) so UI animations are observable in mock mode. */
+  stageDelayMs?: number;
 }
 
 export interface PipelineResult {
@@ -37,14 +41,16 @@ export interface PipelineResult {
   error?: string;
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /**
  * Robust State Machine Pipeline Runner:
  * BRIEFED -> SCRIPTING -> SCRIPT_REVIEW (human gate)
- * -> parallel [ART_PLANNING -> ILLUSTRATING -> KEYFRAME_REVIEW (human gate)] and [VOICING]
+ * -> parallel [ART_PLANNING -> ILLUSTRATING] and [VOICING] -> KEYFRAME_REVIEW (human gate)
  * -> ANIMATING -> EDITING -> SOCIAL -> READY_TO_POST -> DONE
  *
  * Supports idempotent stage execution (input hash caching), retry with backoff,
- * human approval gates, reroll caps, and role-specific error handling.
+ * human approval gates, reroll caps, courier handoffs, and visible stage timing in mock mode.
  */
 export async function runStateMachinePipeline(
   brief: Brief,
@@ -52,8 +58,10 @@ export async function runStateMachinePipeline(
   rec: Recorder,
   options: PipelineOptions = {},
 ): Promise<PipelineResult> {
-  const autoApprove = options.autoApproveGates ?? true;
+  const autoApprove = options.autoApproveGates ?? false;
   const enableCache = options.enableCache ?? true;
+  const sameJobCacheOnly = options.sameJobCacheOnly ?? true;
+  const stageDelayMs = Math.max(0, options.stageDelayMs ?? 0);
 
   await mkdir(jobDir, { recursive: true });
   const dirs = {
@@ -66,20 +74,56 @@ export async function runStateMachinePipeline(
 
   const rerollsUsed: Record<string, number> = {};
 
+  async function runWithVisibleDuration<T>(
+    stageName: string,
+    employee: Role,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    if (stageDelayMs <= 0) {
+      return action();
+    }
+    const tStart = Date.now();
+    const checkpoints = [25, 50, 75];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const pct of checkpoints) {
+      const at = Math.round((stageDelayMs * pct) / 100);
+      timers.push(
+        setTimeout(() => {
+          void rec.stageProgress?.(stageName, employee, pct, `${stageName} (${pct}%)`);
+        }, at),
+      );
+    }
+    try {
+      const result = await action();
+      const elapsed = Date.now() - tStart;
+      if (elapsed < stageDelayMs) {
+        await sleep(stageDelayMs - elapsed);
+      }
+      return result;
+    } finally {
+      for (const t of timers) clearTimeout(t);
+    }
+  }
+
   async function executeStage<T>(
     stageName: string,
     employee: Role,
     input: unknown,
     action: () => Promise<T>,
-  ): Promise<T> {
+    opts: { setState?: boolean } = {},
+  ): Promise<{ value: T; cached: boolean }> {
     const inputHash = sha256({ stageName, input });
 
     if (enableCache && rec.findCachedRun) {
-      const cached = await rec.findCachedRun(stageName, inputHash);
+      const cached = await rec.findCachedRun(stageName, inputHash, { sameJobOnly: sameJobCacheOnly });
       if (cached && cached.outputJson) {
         await rec.log("info", employee, `Stage ${stageName} retrieved from idempotent cache (${inputHash.slice(0, 8)})`);
-        return JSON.parse(cached.outputJson) as T;
+        return { value: JSON.parse(cached.outputJson) as T, cached: true };
       }
+    }
+
+    if (opts.setState !== false) {
+      await rec.setState(stageName);
     }
 
     const runId = await rec.stageStart(stageName, employee, inputHash);
@@ -94,9 +138,9 @@ export async function runStateMachinePipeline(
     }
 
     try {
-      const out = await action();
+      const out = await runWithVisibleDuration(stageName, employee, action);
       await rec.stageEnd(runId, "done", out);
-      return out;
+      return { value: out, cached: false };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await rec.stageEnd(runId, "error", undefined, msg);
@@ -105,12 +149,18 @@ export async function runStateMachinePipeline(
     }
   }
 
+  async function handoff(fromDesk: string, toDesk: string, message: string) {
+    await rec.handoff?.(fromDesk, toDesk, message);
+    if (stageDelayMs > 0) {
+      await sleep(Math.min(900, Math.max(250, Math.round(stageDelayMs * 0.25))));
+    }
+  }
+
   const text = providers.text();
 
   // 1. BRIEFED -> Producer
-  await rec.setState("BRIEFED");
   const producerSkill = await getEmployeeSkill("producer");
-  const plan = await executeStage<ProducerPlan>("BRIEFED", "producer", brief, async () => {
+  const planRes = await executeStage<ProducerPlan>("BRIEFED", "producer", brief, async () => {
     const res = await generateValidated(
       text,
       {
@@ -124,11 +174,14 @@ export async function runStateMachinePipeline(
     );
     return res.value;
   });
+  const plan = planRes.value;
+  if (!planRes.cached) {
+    await handoff("producer", "scriptwriter", "Brief ready → Scriptwriter");
+  }
 
   // 2. SCRIPTING -> Scriptwriter
-  await rec.setState("SCRIPTING");
   const scriptSkill = await getEmployeeSkill("scriptwriter");
-  const script = await executeStage<Script>("SCRIPTING", "scriptwriter", plan, async () => {
+  const scriptRes = await executeStage<Script>("SCRIPTING", "scriptwriter", plan, async () => {
     const res = await generateValidated(
       text,
       {
@@ -142,16 +195,20 @@ export async function runStateMachinePipeline(
     );
     return res.value;
   });
+  const script = scriptRes.value;
   await writeFile(path.join(jobDir, "script.json"), JSON.stringify(script, null, 2));
+  if (!scriptRes.cached) {
+    await handoff("scriptwriter", "SCRIPT_REVIEW", "Script ready → Gate 1 (Script Review)");
+  }
 
   // 3. SCRIPT_REVIEW Gate
-  await rec.setState("SCRIPT_REVIEW");
   let scriptDecision = rec.getGateDecision ? await rec.getGateDecision("SCRIPT_REVIEW") : null;
   if (!scriptDecision && autoApprove) {
     scriptDecision = { decision: "approved", comment: "Auto-approved script" };
   }
 
   if (!scriptDecision || scriptDecision.decision === "waiting") {
+    await rec.setState("SCRIPT_REVIEW");
     await rec.log("info", "scriptwriter", "Pipeline paused at SCRIPT_REVIEW human gate");
     return { state: "SCRIPT_REVIEW", waitingGate: "SCRIPT_REVIEW" };
   }
@@ -165,14 +222,21 @@ export async function runStateMachinePipeline(
 
   await rec.log("info", null, `Gate SCRIPT_REVIEW passed: ${scriptDecision.comment ?? "Approved"}`);
 
-  // 4. PARALLEL BRANCHES:
-  // Branch A: ART_PLANNING -> ILLUSTRATING -> KEYFRAME_REVIEW (human gate)
-  // Branch B: VOICING
+  // Check if ART_PLANNING already finished (resuming after Gate 2) so we don't replay Gate 1 handoff
+  const artAlreadyCached =
+    enableCache && rec.findCachedRun
+      ? Boolean(await rec.findCachedRun("ART_PLANNING", sha256({ stageName: "ART_PLANNING", input: script }), { sameJobOnly: sameJobCacheOnly }))
+      : false;
+  if (!artAlreadyCached) {
+    await handoff("SCRIPT_REVIEW", "artDirector", "Gate 1 approved → Art & Voice");
+  }
 
+  // 4. PARALLEL BRANCHES:
+  // Branch A: ART_PLANNING -> ILLUSTRATING
+  // Branch B: VOICING
   const artBranchPromise = (async () => {
-    await rec.setState("ART_PLANNING");
     const artSkill = await getEmployeeSkill("artDirector");
-    const art = await executeStage<ArtPlan>("ART_PLANNING", "artDirector", script, async () => {
+    const artRes = await executeStage<ArtPlan>("ART_PLANNING", "artDirector", script, async () => {
       const res = await generateValidated(
         text,
         {
@@ -189,10 +253,13 @@ export async function runStateMachinePipeline(
       }
       return res.value;
     });
+    const art = artRes.value;
+    if (!artRes.cached) {
+      await handoff("artDirector", "illustrator", "Style bible & plan → Illustrator");
+    }
 
-    await rec.setState("ILLUSTRATING");
     const image = providers.image();
-    const keyframes = await executeStage<string[]>("ILLUSTRATING", "illustrator", art, async () => {
+    const kfRes = await executeStage<string[]>("ILLUSTRATING", "illustrator", art, async () => {
       const size = { width: REEL.width, height: REEL.height };
       const k0 = path.join(dirs.kf, "k00.png");
       const first = await image.textToImage({ prompt: `${art.style}. ${art.k0Prompt}`, size, outPath: k0 });
@@ -211,58 +278,72 @@ export async function runStateMachinePipeline(
       return kfs;
     });
 
-    // Gate 2: KEYFRAME_REVIEW
-    await rec.setState("KEYFRAME_REVIEW");
-    let kfDecision = rec.getGateDecision ? await rec.getGateDecision("KEYFRAME_REVIEW") : null;
-    if (!kfDecision && autoApprove) {
-      kfDecision = { decision: "approved", comment: "Auto-approved keyframes" };
+    if (!kfRes.cached) {
+      await handoff("illustrator", "KEYFRAME_REVIEW", "Keyframes ready → Gate 2 (Keyframe Review)");
     }
 
-    if (!kfDecision || kfDecision.decision === "waiting") {
-      await rec.log("info", "illustrator", "Pipeline paused at KEYFRAME_REVIEW human gate");
-      return { paused: true, waitingGate: "KEYFRAME_REVIEW" as const, art, keyframes };
-    }
-
-    if (kfDecision.decision === "rejected") {
-      const reason = `Keyframes rejected at gate: ${kfDecision.comment ?? "No comment"}`;
-      await rec.log("warn", "illustrator", reason);
-      throw new Error(reason);
-    }
-
-    await rec.log("info", null, `Gate KEYFRAME_REVIEW passed: ${kfDecision.comment ?? "Approved"}`);
-    return { paused: false, art, keyframes };
+    return { art, keyframes: kfRes.value };
   })();
 
   const voiceBranchPromise = (async () => {
-    await rec.setState("VOICING");
     const tts = providers.tts();
-    return await executeStage("VOICING", "voiceActor", script.beats.map((b) => b.narration), async () => {
-      const takes: { path: string; durationSec: number; words: WordTimestamp[] }[] = [];
-      for (const b of script.beats) {
-        const p = path.join(dirs.voice, `beat${b.index}.wav`);
-        const r = await tts.synthesize({ text: b.narration, outPath: p });
-        if (r.durationSec > b.seconds) {
-          await rec.log("warn", "voiceActor", `Beat ${b.index} voice ${r.durationSec}s exceeds beat ${b.seconds}s; will be trimmed`);
+    // Keep setState: false so parallel VOICING does not race Art branch's job.state transitions in DB
+    const voiceRes = await executeStage(
+      "VOICING",
+      "voiceActor",
+      script.beats.map((b) => b.narration),
+      async () => {
+        const takes: { path: string; durationSec: number; words: WordTimestamp[] }[] = [];
+        for (const b of script.beats) {
+          const p = path.join(dirs.voice, `beat${b.index}.wav`);
+          const r = await tts.synthesize({ text: b.narration, outPath: p });
+          if (r.durationSec > b.seconds) {
+            await rec.log("warn", "voiceActor", `Beat ${b.index} voice ${r.durationSec}s exceeds beat ${b.seconds}s; will be trimmed`);
+          }
+          await rec.artifact("voice", p, "audio/wav", { beat: b.index, durationSec: r.durationSec, words: r.words });
+          takes.push({ path: r.path, durationSec: r.durationSec, words: r.words });
         }
-        await rec.artifact("voice", p, "audio/wav", { beat: b.index, durationSec: r.durationSec, words: r.words });
-        takes.push({ path: r.path, durationSec: r.durationSec, words: r.words });
-      }
-      return takes;
-    });
+        return takes;
+      },
+      { setState: false },
+    );
+    return voiceRes.value;
   })();
 
-  const [artResult, voiceTakes] = await Promise.all([artBranchPromise, voiceBranchPromise]);
+  const [{ art, keyframes }, voiceTakes] = await Promise.all([artBranchPromise, voiceBranchPromise]);
 
-  if ("paused" in artResult && artResult.paused) {
-    return { state: "KEYFRAME_REVIEW", waitingGate: "KEYFRAME_REVIEW", keyframes: artResult.keyframes };
+  // Gate 2: KEYFRAME_REVIEW (checked only after both parallel branches complete to avoid DB state race)
+  let kfDecision = rec.getGateDecision ? await rec.getGateDecision("KEYFRAME_REVIEW") : null;
+  if (!kfDecision && autoApprove) {
+    kfDecision = { decision: "approved", comment: "Auto-approved keyframes" };
   }
 
-  const { art, keyframes } = artResult;
+  if (!kfDecision || kfDecision.decision === "waiting") {
+    await rec.setState("KEYFRAME_REVIEW");
+    await rec.log("info", "illustrator", "Pipeline paused at KEYFRAME_REVIEW human gate");
+    return { state: "KEYFRAME_REVIEW", waitingGate: "KEYFRAME_REVIEW", keyframes };
+  }
+
+  if (kfDecision.decision === "rejected") {
+    const reason = `Keyframes rejected at gate: ${kfDecision.comment ?? "No comment"}`;
+    await rec.log("warn", "illustrator", reason);
+    await rec.setState("ERROR", reason);
+    return { state: "ERROR", error: reason };
+  }
+
+  await rec.log("info", null, `Gate KEYFRAME_REVIEW passed: ${kfDecision.comment ?? "Approved"}`);
+
+  const animAlreadyCached =
+    enableCache && rec.findCachedRun
+      ? Boolean(await rec.findCachedRun("ANIMATING", sha256({ stageName: "ANIMATING", input: keyframes }), { sameJobOnly: sameJobCacheOnly }))
+      : false;
+  if (!animAlreadyCached) {
+    await handoff("KEYFRAME_REVIEW", "animator", "Gate 2 approved → Animator");
+  }
 
   // 5. ANIMATING -> Animator
-  await rec.setState("ANIMATING");
   const video = providers.video();
-  const clips = await executeStage<string[]>("ANIMATING", "animator", keyframes, async () => {
+  const clipsRes = await executeStage<string[]>("ANIMATING", "animator", keyframes, async () => {
     const generatedClips: string[] = [];
     for (const b of script.beats) {
       const cp = path.join(dirs.clips, `beat${b.index}.mp4`);
@@ -279,14 +360,17 @@ export async function runStateMachinePipeline(
     }
     return generatedClips;
   });
+  const clips = clipsRes.value;
+  if (!clipsRes.cached) {
+    await handoff("animator", "editor", "Animated clips → Editor");
+  }
 
   // 6. EDITING -> Editor
-  await rec.setState("EDITING");
   const durationSec = script.beats.reduce((a, b) => a + b.seconds, 0);
   const reelPath = path.join(dirs.out, "reel.mp4");
   const thumbnailPath = path.join(dirs.out, "thumbnail.png");
 
-  await executeStage("EDITING", "editor", { clips, voice: voiceTakes.map((v) => v.path) }, async () => {
+  const editRes = await executeStage("EDITING", "editor", { clips, voice: voiceTakes.map((v) => v.path) }, async () => {
     const listFile = path.join(dirs.clips, "concat.txt");
     await writeFile(listFile, clips.map((c) => `file '${ffPath(c)}'`).join("\n"));
     const audioIn = voiceTakes.flatMap((v) => ["-i", v.path]);
@@ -310,36 +394,50 @@ export async function runStateMachinePipeline(
     await rec.artifact("thumbnail", thumbnailPath, "image/png");
     return { reelPath, thumbnailPath, durationSec };
   });
+  if (!editRes.cached) {
+    await handoff("editor", "socialManager", "Master reel assembled → Social Manager");
+  }
 
   // 7. SOCIAL -> Social Manager
-  await rec.setState("SOCIAL");
   const socialSkill = await getEmployeeSkill("socialManager");
-  const social = await executeStage<Social>("SOCIAL", "socialManager", { script: script.title, platforms: brief.platforms }, async () => {
-    const res = await generateValidated(
-      text,
-      {
-        role: "socialManager",
-        system: socialSkill.prompt,
-        user: JSON.stringify({ title: script.title, platforms: brief.platforms }),
-        params: socialSkill.params,
-      },
-      SocialSchema,
-      { maxAttempts: 3, initialDelayMs: 200 },
-    );
-    // Spec requirement 8: Block DONE if disclosure is missing
-    for (const post of res.value.posts) {
-      if (!post.aiDisclosure || post.aiDisclosure.trim().length === 0) {
-        throw new Error(`Social Manager generated post for ${post.platform} without AI disclosure`);
+  const socialRes = await executeStage<Social>(
+    "SOCIAL",
+    "socialManager",
+    { script: script.title, platforms: brief.platforms },
+    async () => {
+      const res = await generateValidated(
+        text,
+        {
+          role: "socialManager",
+          system: socialSkill.prompt,
+          user: JSON.stringify({ title: script.title, platforms: brief.platforms }),
+          params: socialSkill.params,
+        },
+        SocialSchema,
+        { maxAttempts: 3, initialDelayMs: 200 },
+      );
+      // Spec requirement 8: Block DONE if disclosure is missing
+      for (const post of res.value.posts) {
+        if (!post.aiDisclosure || post.aiDisclosure.trim().length === 0) {
+          throw new Error(`Social Manager generated post for ${post.platform} without AI disclosure`);
+        }
       }
-    }
-    return res.value;
-  });
+      return res.value;
+    },
+  );
+  const social = socialRes.value;
 
   await writeFile(path.join(dirs.out, "social.json"), JSON.stringify(social, null, 2));
   await rec.artifact("social", path.join(dirs.out, "social.json"), "application/json");
+  if (!socialRes.cached) {
+    await handoff("socialManager", "POSTED", "Post pack ready → Outbox");
+  }
 
   // 8. READY_TO_POST -> DONE
   await rec.setState("READY_TO_POST");
+  if (stageDelayMs > 0) {
+    await sleep(Math.min(700, Math.max(200, Math.round(stageDelayMs * 0.2))));
+  }
   await rec.setState("DONE");
 
   return {

@@ -10,6 +10,9 @@ export interface HeaderProps {
   isPaused: boolean;
   onTogglePause: () => void;
   activeStage?: string;
+  isMockMode?: boolean;
+  onResetDemo?: () => void;
+  isResetting?: boolean;
 }
 
 export function Header({
@@ -19,6 +22,9 @@ export function Header({
   isPaused,
   onTogglePause,
   activeStage,
+  isMockMode = false,
+  onResetDemo,
+  isResetting = false,
 }: HeaderProps) {
   const [timeStr, setTimeStr] = useState<string>("");
 
@@ -28,7 +34,7 @@ export function Header({
       setTimeStr(
         now.toLocaleDateString("en-US", { weekday: "short" }) +
           " " +
-          now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+          now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
       );
     }
     update();
@@ -84,15 +90,15 @@ export function Header({
         </div>
 
         {/* Right HUD: Budget Meter and Controls */}
-        <div className="flex items-center gap-4 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
           {/* Budget Meter */}
           <div
             className={`flex items-center gap-2 px-3 py-1 bg-surface-container-low rounded border transition-colors ${
               isStop
                 ? "border-error shadow-[0_0_8px_rgba(255,180,171,0.2)]"
                 : isWarn
-                ? "border-primary shadow-[0_0_8px_rgba(245,158,11,0.2)]"
-                : "border-[#272a3b]"
+                  ? "border-primary shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                  : "border-[#272a3b]"
             }`}
           >
             <div className="flex flex-col text-right">
@@ -118,8 +124,23 @@ export function Header({
             </div>
           </div>
 
+          {/* Reset Demo Button (MOCK_MODE only) */}
+          {isMockMode && onResetDemo && (
+            <button
+              type="button"
+              onClick={onResetDemo}
+              disabled={isResetting}
+              title="Clear all mock jobs and reset the office floor"
+              className="px-2.5 py-1 font-mono text-label-sm rounded border border-[#272a3b] bg-surface-container-high text-on-surface-variant hover:text-primary hover:border-primary/50 flex items-center gap-1 select-none transition-all active:translate-y-[1px] disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[15px]">restart_alt</span>
+              <span className="font-bold">{isResetting ? "RESETTING..." : "RESET DEMO"}</span>
+            </button>
+          )}
+
           {/* Pause / Resume Pipeline Toggle */}
           <button
+            type="button"
             onClick={onTogglePause}
             className={`px-3 py-1 font-mono text-label-sm rounded border flex items-center gap-1.5 select-none transition-all active:translate-y-[1px] ${
               isPaused

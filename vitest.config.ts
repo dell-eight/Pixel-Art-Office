@@ -7,6 +7,11 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     environment: "node",
     testTimeout: 60_000,
-    env: { MOCK_MODE: "true", DATABASE_URL: "sqlserver://unused-in-tests" },
+    env: {
+      MOCK_MODE: "true",
+      MOCK_STAGE_MS: "0",
+      MOCK_AUTO_APPROVE: "false",
+      DATABASE_URL: "sqlserver://unused-in-tests",
+    },
   },
 });

@@ -6,6 +6,10 @@ const bool = z
   .string()
   .optional()
   .transform((v) => (v ?? "true").trim().toLowerCase() !== "false");
+const boolDefaultFalse = z
+  .string()
+  .optional()
+  .transform((v) => (v ?? "false").trim().toLowerCase() === "true");
 const optStr = z
   .string()
   .optional()
@@ -14,6 +18,8 @@ const optStr = z
 const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required (see .env.example)"),
   MOCK_MODE: bool,
+  MOCK_STAGE_MS: z.coerce.number().int().min(0).default(4000),
+  MOCK_AUTO_APPROVE: boolDefaultFalse,
   DATA_DIR: z.string().default("./data"),
   FFMPEG_PATH: optStr,
   GEMINI_API_KEY: optStr,

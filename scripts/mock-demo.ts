@@ -47,7 +47,7 @@ async function main() {
       data: { title: brief.topic, briefJson: JSON.stringify(brief), mock: true },
     });
     jobId = job.id;
-    rec = new DbRecorder(prisma, jobId, true, true);
+    rec = new DbRecorder(prisma, jobId, true, true, brief.topic);
   }
 
   const jobDir = path.join(dataDir(), "jobs", jobId);
@@ -56,6 +56,8 @@ async function main() {
   const res = await runStateMachinePipeline(brief, jobDir, rec, {
     autoApproveGates: true,
     enableCache: true,
+    sameJobCacheOnly: true,
+    stageDelayMs: 0,
   });
 
   console.log(`\nState machine finished with state: ${res.state}`);

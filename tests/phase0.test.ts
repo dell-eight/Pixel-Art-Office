@@ -94,4 +94,80 @@ describe("Phase 1 State Machine Pipeline", () => {
     expect(res.state).toBe("SCRIPT_REVIEW");
     expect(res.waitingGate).toBe("SCRIPT_REVIEW");
   });
+
+  it("enforces visible stageDelayMs and emits start, progress, end, and courier handoff events", async () => {
+    const animDir = path.join(dir, "visible-delay");
+    const rec = new ConsoleRecorder(false);
+    const t0 = Date.now();
+    const res = await runStateMachinePipeline(
+      { topic: "rainwater harvesting barrel", audience: "general", platforms: ["tiktok"], tone: "curious" },
+      animDir,
+      rec,
+      { autoApproveGates: false, stageDelayMs: 250 },
+    );
+    const elapsed = Date.now() - t0;
+
+    expect(res.state).toBe("SCRIPT_REVIEW");
+    // 2 stages (BRIEFED + SCRIPTING) * 250ms + 2 handoffs * 250ms >= 900ms
+    expect(elapsed).toBeGreaterThanOrEqual(800);
+
+    const starts = rec.events.filter((e) => e.kind === "stage:start");
+    const progresses = rec.events.filter((e) => e.kind === "stage:progress");
+    const ends = rec.events.filter((e) => e.kind === "stage:end");
+    const handoffs = rec.events.filter((e) => e.kind === "handoff");
+
+    expect(starts.map((e) => e.stage)).toEqual(["BRIEFED", "SCRIPTING"]);
+    expect(progresses.map((e) => e.progress)).toEqual([25, 50, 75, 25, 50, 75]);
+    expect(ends.map((e) => e.stage)).toEqual(["BRIEFED", "SCRIPTING"]);
+    expect(handoffs.map((e) => [e.fromDesk, e.toDesk])).toEqual([
+      ["producer", "scriptwriter"],
+      ["scriptwriter", "SCRIPT_REVIEW"],
+    ]);
+  });
+
+  it("resumes cleanly through Gate 1 (SCRIPT_REVIEW) and Gate 2 (KEYFRAME_REVIEW) to DONE", async () => {
+    const gateDir = path.join(dir, "two-gates");
+    const rec = new ConsoleRecorder(false);
+    const brief = { topic: "backyard compost setup", audience: "general", platforms: ["tiktok" as const], tone: "friendly" };
+
+    // Run 1: stops at Gate 1
+    const r1 = await runStateMachinePipeline(brief, gateDir, rec, {
+      autoApproveGates: false,
+      enableCache: true,
+      sameJobCacheOnly: true,
+    });
+    expect(r1.state).toBe("SCRIPT_REVIEW");
+    expect(r1.waitingGate).toBe("SCRIPT_REVIEW");
+
+    // Approve Gate 1 -> resumes and stops at Gate 2
+    rec.setGateDecision("SCRIPT_REVIEW", "approved", "looks good");
+    const r2 = await runStateMachinePipeline(brief, gateDir, rec, {
+      autoApproveGates: false,
+      enableCache: true,
+      sameJobCacheOnly: true,
+    });
+    expect(r2.state).toBe("KEYFRAME_REVIEW");
+    expect(r2.waitingGate).toBe("KEYFRAME_REVIEW");
+
+    // Approve Gate 2 -> finishes to DONE
+    rec.setGateDecision("KEYFRAME_REVIEW", "approved", "nice frames");
+    const r3 = await runStateMachinePipeline(brief, gateDir, rec, {
+      autoApproveGates: false,
+      enableCache: true,
+      sameJobCacheOnly: true,
+    });
+    expect(r3.state).toBe("DONE");
+    expect(r3.reelPath).toBeTruthy();
+
+    // Every stage ran exactly once across the 3 invocations (cached stages were not re-executed)
+    const stageStarts = rec.events.filter((e) => e.kind === "stage:start").map((e) => e.stage);
+    expect(stageStarts.filter((s) => s === "BRIEFED")).toHaveLength(1);
+    expect(stageStarts.filter((s) => s === "SCRIPTING")).toHaveLength(1);
+    expect(stageStarts.filter((s) => s === "ART_PLANNING")).toHaveLength(1);
+    expect(stageStarts.filter((s) => s === "ILLUSTRATING")).toHaveLength(1);
+    expect(stageStarts.filter((s) => s === "VOICING")).toHaveLength(1);
+    expect(stageStarts.filter((s) => s === "ANIMATING")).toHaveLength(1);
+    expect(stageStarts.filter((s) => s === "EDITING")).toHaveLength(1);
+    expect(stageStarts.filter((s) => s === "SOCIAL")).toHaveLength(1);
+  });
 });
