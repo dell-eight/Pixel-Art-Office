@@ -73,10 +73,10 @@ export function Sidebar({
           </span>
         </div>
         <SegmentedBar value={budgetMtdPhp} max={budgetCapPhp} segments={8} className="w-full" />
-        <div className="flex items-center justify-between pt-1">
-          <span className="font-mono text-label-xs text-outline">ENVIRONMENT:</span>
+        <div className="flex items-center justify-between pt-1 gap-2">
+          <span className="font-mono text-label-xs text-outline">MODE:</span>
           <span
-            className={`font-mono text-label-xs px-1.5 py-0.5 rounded border ${
+            className={`font-mono text-label-xs px-1.5 py-0.5 rounded border whitespace-nowrap shrink-0 ${
               isMockMode
                 ? "bg-surface-container border-secondary/40 text-secondary"
                 : "bg-primary-container/20 border-primary/50 text-primary"

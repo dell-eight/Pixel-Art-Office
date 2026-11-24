@@ -266,7 +266,7 @@ export default function AppStudio() {
               [role]: { status: "working", progress: 0, stage: ev.stage, message: ev.message },
             }));
             setSelectedEmployee(role);
-            setCourier((prev) => (prev ? { ...prev, active: false } : null));
+            setCourier(null);
           } else if (ev.type === "stage:progress" && ev.employee) {
             const role = ev.employee as Role;
             setEmployeeActivity((prev) => ({
@@ -293,21 +293,32 @@ export default function AppStudio() {
               ...prev,
               [gateRole]: { status: "waiting", progress: 100, stage: ev.gate, message: ev.message },
             }));
+            setCourier(null);
+            refreshJobs();
+          } else if (ev.type === "gate:resolved") {
             if (ev.gate) {
-              setCourier({
-                pos: ev.gate,
-                fromDesk: ev.gate,
-                toDesk: ev.gate,
-                label: ev.message,
-                jobTitle: ev.jobTitle || "Awaiting Approval",
-                active: true,
-              });
+              const gateRole: Role = ev.gate === "KEYFRAME_REVIEW" ? "illustrator" : "scriptwriter";
+              setEmployeeActivity((prev) => ({
+                ...prev,
+                [gateRole]: { status: "done", progress: 100, stage: ev.gate, message: ev.message },
+              }));
             }
             refreshJobs();
-          } else if (ev.type === "gate:resolved" || ev.type === "job:state") {
+          } else if (ev.type === "job:state") {
             refreshJobs();
           } else if (ev.type === "job:done") {
             setCourier(null);
+            setEmployeeActivity((prev) => {
+              const next: Partial<Record<Role, EmployeeActivity>> = {};
+              for (const r of ROSTER) {
+                const cur = prev[r.id];
+                next[r.id] =
+                  cur?.status === "error"
+                    ? cur
+                    : { status: "done", progress: 100, stage: cur?.stage, message: cur?.message };
+              }
+              return next;
+            });
             refreshJobs();
             refreshBudget();
           } else if (ev.type === "job:error") {
@@ -343,6 +354,7 @@ export default function AppStudio() {
   }, [appendEvents, refreshBudget, refreshJobs, refreshSettings, refreshStaff, triggerCourierMove]);
 
   const activeJob = jobs.find((j) => !["DONE", "ERROR"].includes(j.state)) || null;
+  const displayJob = activeJob ?? jobs[0] ?? null;
   const activeRawJob = rawJobs.find((j) => j.id === (activeJob?.id ?? rawJobs[0]?.id)) || null;
 
   // Derive employee status combining DB job state + live SSE stage activity (supports parallel Art + Voice!)
@@ -526,7 +538,7 @@ export default function AppStudio() {
             employees={employees}
             selectedEmployee={selectedEmployee}
             onSelectEmployee={setSelectedEmployee}
-            activeJob={activeJob}
+            activeJob={displayJob}
             courier={courier}
             gates={gates}
             onApproveGate={handleApproveGate}

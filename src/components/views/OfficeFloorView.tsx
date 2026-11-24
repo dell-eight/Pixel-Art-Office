@@ -140,7 +140,7 @@ export function OfficeFloorView({
       <div
         key={emp.id}
         onClick={() => onSelectEmployee(emp.id)}
-        className={`relative p-3.5 rounded border cursor-pointer select-none transition-all ${
+        className={`relative p-3 rounded border cursor-pointer select-none transition-all ${
           isWorking
             ? "bg-surface-container border-primary shadow-[0_0_16px_rgba(245,158,11,0.35)] ring-1 ring-primary"
             : isWaiting
@@ -168,15 +168,15 @@ export function OfficeFloorView({
         </div>
 
         {/* Character Avatar & Desk Prop */}
-        <div className="flex items-center gap-3 my-2">
+        <div className="flex items-center gap-2.5 my-2">
           <div
-            className={`w-12 h-12 rounded border border-[#272a3b] flex items-center justify-center shrink-0 ${
+            className={`w-9 h-9 rounded border border-[#272a3b] flex items-center justify-center shrink-0 ${
               isWorking ? "animate-pixel-bob" : ""
             }`}
             style={{ backgroundColor: `${emp.color}25` }}
           >
             <svg
-              className="w-8 h-8 pixelated"
+              className="w-6 h-6 pixelated"
               viewBox="0 0 16 16"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -191,10 +191,10 @@ export function OfficeFloorView({
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="font-headline font-bold text-headline-sm text-on-surface truncate">
+            <div className="font-headline font-bold text-headline-sm text-on-surface leading-tight">
               {emp.name}
             </div>
-            <div className="font-mono text-label-sm text-primary truncate">{emp.title}</div>
+            <div className="font-mono text-[11px] leading-tight text-primary">{emp.title}</div>
           </div>
         </div>
 
@@ -261,11 +261,23 @@ export function OfficeFloorView({
           </div>
 
           {activeJob && (
-            <div className="flex items-center gap-2 px-2.5 py-0.5 bg-surface-container-lowest border border-primary/40 rounded">
-              <span className="material-symbols-outlined text-primary text-[16px] animate-bounce">
-                folder
+            <div
+              className={`flex items-center gap-2 px-2.5 py-0.5 bg-surface-container-lowest rounded border ${
+                activeJob.state === "DONE" ? "border-secondary/40" : "border-primary/40"
+              }`}
+            >
+              <span
+                className={`material-symbols-outlined text-[16px] ${
+                  activeJob.state === "DONE" ? "text-secondary" : "text-primary animate-bounce"
+                }`}
+              >
+                {activeJob.state === "DONE" ? "task_alt" : "folder"}
               </span>
-              <span className="font-mono text-label-sm text-primary font-bold truncate max-w-[220px]">
+              <span
+                className={`font-mono text-label-sm font-bold truncate max-w-[200px] ${
+                  activeJob.state === "DONE" ? "text-secondary" : "text-primary"
+                }`}
+              >
                 {activeJob.title}
               </span>
               <span className="font-mono text-label-xs text-on-surface-variant">
